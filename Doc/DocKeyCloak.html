@@ -1,0 +1,5026 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>KEYCLOAK INTERNAL WIKI</title>
+
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css">
+
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            securityLevel: 'loose',
+            theme: 'default'
+        });
+
+        document.addEventListener("DOMContentLoaded", () => {
+            hljs.highlightAll();
+
+            // Dynamic Sidebar Table of Contents
+            const sidebarUl = document.querySelector(".sidebar ul");
+            if (sidebarUl) {
+                sidebarUl.innerHTML = "";
+                const sections = document.querySelectorAll("section[id]");
+                sections.forEach(sec => {
+                    const heading = sec.querySelector("h1, h2, h3");
+                    if (heading) {
+                        const li = document.createElement("li");
+                        const a = document.createElement("a");
+                        a.href = `#${sec.id}`;
+                        a.textContent = heading.textContent.replace(/^[0-9.]+\s*/, '').trim();
+                        
+                        const numMatch = heading.textContent.match(/^[0-9.]+/);
+                        if (numMatch) {
+                            const numSpan = document.createElement("span");
+                            numSpan.className = "chapter-num";
+                            numSpan.textContent = numMatch[0];
+                            a.prepend(numSpan);
+                        }
+
+                        a.addEventListener("click", () => {
+                            document.body.classList.remove("sidebar-open");
+                        });
+
+                        li.appendChild(a);
+                        sidebarUl.appendChild(li);
+                    }
+                });
+            }
+
+            // ScrollSpy active highlighting
+            const links = document.querySelectorAll(".sidebar a");
+            const sections = Array.from(document.querySelectorAll("section[id]"));
+            
+            function changeActiveLink() {
+                let index = sections.length;
+                while(--index && window.scrollY + 120 < sections[index].offsetTop) {}
+                
+                links.forEach((link) => link.classList.remove("active"));
+                if (links[index]) {
+                    links[index].classList.add("active");
+                    const activeLink = links[index];
+                    const sidebar = document.querySelector(".sidebar");
+                    const activeRect = activeLink.getBoundingClientRect();
+                    const sidebarRect = sidebar.getBoundingClientRect();
+                    if (activeRect.top < sidebarRect.top || activeRect.bottom > sidebarRect.bottom) {
+                        activeLink.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                    }
+                }
+            }
+            
+            changeActiveLink();
+            window.addEventListener("scroll", changeActiveLink);
+
+            // Automatically wrap all tables in a .table-wrapper div for responsive layout
+            document.querySelectorAll("table").forEach(tbl => {
+                const wrapper = document.createElement("div");
+                wrapper.className = "table-wrapper";
+                tbl.parentNode.insertBefore(wrapper, tbl);
+                wrapper.appendChild(tbl);
+            });
+        });
+
+        function switchMockTab(tabBtn, tabId) {
+            const container = tabBtn.closest('.kc-ui-mockup');
+            if (!container) return;
+            
+            container.querySelectorAll('.mock-tab-btn').forEach(btn => btn.classList.remove('active'));
+            tabBtn.classList.add('active');
+            
+            container.querySelectorAll('.mock-tab-pane').forEach(pane => pane.classList.remove('active'));
+            const targetPane = container.querySelector('#' + tabId);
+            if (targetPane) targetPane.classList.add('active');
+        }
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --bg-body: #f8fafc;
+            --bg-sidebar: #0f172a;
+            --border-color: #e2e8f0;
+            --text-main: #334155;
+            --text-title: #0f172a;
+            --sidebar-text: #94a3b8;
+            --sidebar-active: #ffffff;
+            --sidebar-active-bg: #1e293b;
+            --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        html {
+            scroll-behavior: smooth;
+            scroll-padding-top: 80px;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            display: flex;
+            background: var(--bg-body);
+            color: var(--text-main);
+            line-height: 1.6;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .sidebar::-webkit-scrollbar-thumb {
+            background: #334155;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* SIDEBAR */
+        .sidebar {
+            width: 300px;
+            height: 100vh;
+            overflow-y: auto;
+            position: fixed;
+            left: 0;
+            top: 0;
+            background: var(--bg-sidebar);
+            padding: 24px 16px;
+            color: white;
+            border-right: 1px solid #1e293b;
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sidebar h1 {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #f8fafc;
+            margin-bottom: 24px;
+            padding-left: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sidebar h1::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: var(--primary);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--primary);
+        }
+
+        .sidebar ul {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .sidebar li {
+            margin: 0;
+        }
+
+        .sidebar a {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 8px 12px;
+            color: var(--sidebar-text);
+            text-decoration: none;
+            font-size: 13.5px;
+            font-weight: 500;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            word-break: break-word;
+        }
+
+        .sidebar a:hover {
+            color: var(--sidebar-active);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .sidebar a.active {
+            color: var(--sidebar-active);
+            background: var(--sidebar-active-bg);
+            font-weight: 600;
+            box-shadow: inset 3px 0 0 0 var(--primary);
+        }
+
+        .sidebar a .chapter-num {
+            font-family: monospace;
+            opacity: 0.6;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        /* CONTENT CONTAINER */
+        .content {
+            margin-left: 300px;
+            padding: 40px 60px;
+            width: calc(100% - 300px);
+            max-width: 1200px;
+        }
+
+        /* MOBILE HEADER */
+        .mobile-header {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 56px;
+            background: #ffffff;
+            border-bottom: 1px solid var(--border-color);
+            z-index: 99;
+            align-items: center;
+            padding: 0 16px;
+            gap: 12px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+
+        .mobile-toggle {
+            background: none;
+            border: none;
+            color: var(--text-title);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mobile-toggle:hover {
+            background: #f1f5f9;
+        }
+
+        .mobile-title {
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            color: var(--text-title);
+        }
+
+        /* SECTIONS */
+        section {
+            background: white;
+            padding: 36px;
+            margin-bottom: 32px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--card-shadow);
+        }
+
+        section h1, section h2 {
+            font-size: 22px;
+            color: var(--text-title);
+            font-weight: 700;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        section h3 {
+            font-size: 16px;
+            color: var(--text-title);
+            font-weight: 600;
+            margin: 24px 0 12px 0;
+        }
+
+        p {
+            font-size: 15px;
+            line-height: 1.7;
+            margin-bottom: 16px;
+            color: var(--text-main);
+        }
+
+        ul, ol {
+            margin-left: 24px;
+            margin-bottom: 16px;
+        }
+
+        li {
+            margin-bottom: 6px;
+            font-size: 15px;
+            color: var(--text-main);
+        }
+
+        /* TABLES */
+        .table-wrapper {
+            overflow-x: auto;
+            margin: 20px 0;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        th, td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background: #f8fafc;
+            color: #475569;
+            font-weight: 600;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:nth-child(even) {
+            background: #fafafa;
+        }
+
+        /* CALLOUTS (ALERTS) */
+        .note, .warning, .success {
+            padding: 16px 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            font-size: 14.5px;
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .note {
+            background: #f0f7ff;
+            border-left: 4px solid #3b82f6;
+            color: #1e3a8a;
+        }
+        .note::before {
+            content: "💡 Note";
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .warning {
+            background: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            color: #78350f;
+        }
+        .warning::before {
+            content: "⚠️ Warning";
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .success {
+            background: #f0fdf4;
+            border-left: 4px solid #10b981;
+            color: #065f46;
+        }
+        .success::before {
+            content: "✅ Success";
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        /* CODE BLOCKS */
+        code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            background: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13.5px;
+            color: #0f172a;
+        }
+
+        pre {
+            margin: 20px 0;
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 16px;
+            overflow-x: auto;
+            border: 1px solid #1e293b;
+        }
+
+        pre code {
+            background: transparent;
+            padding: 0;
+            color: #f8fafc;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        /* MERMAID DIAGRAMS */
+        .mermaid {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+            overflow-x: auto;
+        }
+
+        /* RESPONSIVE DESIGN */
+        @media (max-width: 1024px) {
+            .mobile-header {
+                display: flex;
+            }
+            
+            .sidebar {
+                transform: translateX(-100%);
+                height: calc(100vh - 56px);
+                top: 56px;
+                width: 280px;
+            }
+            
+            body.sidebar-open .sidebar {
+                transform: translateX(0);
+            }
+            
+            .content {
+                margin-left: 0;
+                width: 100%;
+                padding: 80px 20px 40px 20px;
+            }
+            
+            section {
+                padding: 20px;
+            }
+        }
+
+        /* ========================================== */
+        /* KEYCLOAK UI MOCKUP SYSTEM */
+        /* ========================================== */
+        .kc-ui-mockup {
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            margin: 24px 0;
+            overflow: hidden;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            display: flex;
+            flex-direction: column;
+            height: 600px;
+        }
+
+        .kc-mock-header {
+            background: #1e293b;
+            color: white;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 13px;
+            border-bottom: 2px solid #0f172a;
+            flex-shrink: 0;
+        }
+
+        .kc-mock-logo {
+            font-weight: 700;
+            color: #3b82f6;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .kc-mock-logo::before {
+            content: '';
+            width: 10px;
+            height: 10px;
+            background: #3b82f6;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .kc-mock-realm-select {
+            background: #334155;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            border: none;
+            cursor: pointer;
+        }
+
+        .kc-mock-wrapper {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .kc-mock-sidebar {
+            width: 200px;
+            background: #0f172a;
+            color: #94a3b8;
+            padding: 12px;
+            font-size: 12px;
+            border-right: 1px solid #1e293b;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+
+        .kc-mock-sidebar-title {
+            text-transform: uppercase;
+            font-weight: 700;
+            font-size: 10px;
+            margin-top: 14px;
+            margin-bottom: 6px;
+            letter-spacing: 0.05em;
+            color: #475569;
+        }
+
+        .kc-mock-sidebar-item {
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin-bottom: 2px;
+            cursor: default;
+            transition: all 0.2s ease;
+        }
+
+        .kc-mock-sidebar-item.active {
+            background: #1e293b;
+            color: white;
+            font-weight: 600;
+        }
+
+        .kc-mock-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #f8fafc;
+            overflow: hidden;
+            padding: 20px;
+        }
+
+        .kc-mock-title-area {
+            margin-bottom: 16px;
+            flex-shrink: 0;
+        }
+
+        .kc-mock-title-area h3 {
+            font-size: 18px;
+            margin: 0;
+            color: #0f172a;
+            border: none;
+            padding: 0;
+        }
+
+        .kc-mock-tabs-nav {
+            display: flex;
+            border-bottom: 1px solid #e2e8f0;
+            margin-bottom: 16px;
+            gap: 4px;
+            overflow-x: auto;
+            flex-shrink: 0;
+        }
+
+        .mock-tab-btn {
+            background: none;
+            border: none;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #64748b;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+
+        .mock-tab-btn:hover {
+            color: #0f172a;
+            background: #f1f5f9;
+        }
+
+        .mock-tab-btn.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+            font-weight: 600;
+        }
+
+        .mock-tab-content {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .mock-tab-pane {
+            display: none;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .mock-tab-pane.active {
+            display: flex;
+            height: 100%;
+        }
+
+        /* Split view for interactive visual & side-by-side desc */
+        .mock-split-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            gap: 16px;
+            overflow: hidden;
+        }
+
+        .mock-split-visual {
+            flex: 1.2;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: #ffffff;
+            padding: 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+        }
+
+        .mock-split-desc {
+            flex: 1;
+            overflow-y: auto;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            padding: 16px;
+            border-radius: 6px;
+        }
+
+        .mock-split-desc h4 {
+            font-size: 14px;
+            color: #0f172a;
+            margin-bottom: 8px;
+            font-weight: 700;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 4px;
+        }
+
+        .mock-split-desc p {
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+
+        .mock-split-desc ul {
+            margin-left: 16px;
+            margin-bottom: 12px;
+        }
+
+        .mock-split-desc li {
+            font-size: 12px;
+            margin-bottom: 4px;
+            color: #475569;
+        }
+
+        .mock-form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 100%;
+        }
+
+        .mock-form-group.row {
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+            background: #f8fafc;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #f1f5f9;
+        }
+
+        .mock-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #334155;
+        }
+
+        .mock-desc-text {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: -2px;
+        }
+
+        .mock-input {
+            padding: 8px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 12px;
+            width: 100%;
+            background: #f8fafc;
+            color: #334155;
+        }
+
+        .mock-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            background: white;
+        }
+
+        .mock-toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+
+        .mock-toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .mock-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #cbd5e1;
+            transition: .2s;
+            border-radius: 20px;
+        }
+
+        .mock-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .2s;
+            border-radius: 50%;
+        }
+
+        input:checked + .mock-slider {
+            background-color: #3b82f6;
+        }
+
+        input:checked + .mock-slider:before {
+            transform: translateX(18px);
+        }
+
+        .mock-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .mock-badge.badge-success {
+            background: #dcfce7;
+            color: #15803d;
+        }
+
+        .mock-badge.badge-info {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .mock-badge.badge-warning {
+            background: #fef3c7;
+            color: #b45309;
+        }
+
+        .mock-badge.badge-danger {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+
+        .mock-table-wrapper {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        .mock-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            text-align: left;
+        }
+
+        .mock-table th, .mock-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .mock-table th {
+            background: #f1f5f9;
+            color: #475569;
+            font-weight: 600;
+        }
+
+        .mock-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .mock-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            align-self: flex-start;
+            transition: background 0.15s ease;
+        }
+
+        .mock-btn:hover {
+            background: #2563eb;
+        }
+
+        .mock-btn.secondary {
+            background: #e2e8f0;
+            color: #334155;
+        }
+
+        .mock-btn.secondary:hover {
+            background: #cbd5e1;
+        }
+
+        .mock-btn.danger {
+            background: #ef4444;
+        }
+
+        .mock-btn.danger:hover {
+            background: #dc2626;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="mobile-header">
+    <button class="mobile-toggle" onclick="document.body.classList.toggle('sidebar-open')" aria-label="Toggle Menu">
+        <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+    </button>
+    <span class="mobile-title">KEYCLOAK WIKI</span>
+</div>
+
+<div class="sidebar">
+
+    <h1>KEYCLOAK WIKI</h1>
+
+    <ul>
+        <li><a href="#intro">1. Giới thiệu</a></li>
+        <li><a href="#iam">2. IAM</a></li>
+        <li><a href="#oauth2">3. OAuth2</a></li>
+        <li><a href="#oidc">4. OpenID Connect</a></li>
+        <li><a href="#jwt">5. JWT</a></li>
+        <li><a href="#architecture">6. Kiến trúc</a></li>
+        <li><a href="#install">7. Cài đặt</a></li>
+        <li><a href="#realm">8. Realm</a></li>
+        <li><a href="#client">9. Client</a></li>
+        <li><a href="#login">10. Login Flow</a></li>
+    </ul>
+
+</div>
+
+<div class="content">
+
+    <section id="intro">
+
+        <h1>1. KEYCLOAK LÀ GÌ ?</h1>
+
+        <p>
+            Keycloak là nền tảng Identity and Access Management (IAM)
+            mã nguồn mở được phát triển bởi Red Hat.
+        </p>
+
+        <p>
+            Keycloak giúp tập trung việc xác thực và phân quyền
+            thay vì mỗi hệ thống tự xây dựng chức năng đăng nhập.
+        </p>
+
+        <h3>Tính năng chính</h3>
+
+        <ul>
+
+            <li>Single Sign On (SSO)</li>
+            <li>OAuth2</li>
+            <li>OpenID Connect</li>
+            <li>SAML</li>
+            <li>MFA</li>
+            <li>LDAP</li>
+            <li>Active Directory</li>
+            <li>Social Login</li>
+            <li>User Federation</li>
+
+        </ul>
+
+        <div class="success">
+
+            Một người dùng đăng nhập một lần
+            và có thể truy cập nhiều hệ thống.
+
+        </div>
+
+    </section>
+
+    <section id="iam">
+
+        <h2>2. IAM - Identity Access Management</h2>
+
+        <p>
+
+            IAM là hệ thống quản lý:
+
+        </p>
+
+        <ul>
+
+            <li>Danh tính người dùng</li>
+            <li>Xác thực</li>
+            <li>Ủy quyền</li>
+            <li>Quản lý quyền</li>
+
+        </ul>
+
+        <h3>Authentication</h3>
+
+        <p>
+
+            Bạn là ai?
+
+        </p>
+
+        Ví dụ:
+
+        <ul>
+            <li>Username Password</li>
+            <li>OTP</li>
+            <li>Google Login</li>
+        </ul>
+
+        <h3>Authorization</h3>
+
+        <p>
+
+            Bạn được phép làm gì?
+
+        </p>
+
+        Ví dụ:
+
+        <ul>
+            <li>Xem dữ liệu</li>
+            <li>Tạo dữ liệu</li>
+            <li>Xóa dữ liệu</li>
+        </ul>
+
+    </section>
+
+    <section id="oauth2">
+
+        <h2>3. OAuth2</h2>
+
+        <p>
+
+            OAuth2 là framework ủy quyền.
+
+        </p>
+
+        <table>
+
+            <tr>
+                <th>Vai trò</th>
+                <th>Mô tả</th>
+            </tr>
+
+            <tr>
+                <td>Resource Owner</td>
+                <td>Người dùng</td>
+            </tr>
+
+            <tr>
+                <td>Client</td>
+                <td>Ứng dụng</td>
+            </tr>
+
+            <tr>
+                <td>Authorization Server</td>
+                <td>Keycloak</td>
+            </tr>
+
+            <tr>
+                <td>Resource Server</td>
+                <td>Backend API</td>
+            </tr>
+
+        </table>
+
+        <h3>Authorization Code Flow</h3>
+
+        <div class="mermaid">
+
+            sequenceDiagram
+
+            User->>Frontend: Login
+
+            Frontend->>Keycloak: Redirect Login
+
+            Keycloak->>User: Form Login
+
+            User->>Keycloak: Credentials
+
+            Keycloak->>Frontend: Authorization Code
+
+            Frontend->>Keycloak: Exchange Token
+
+            Keycloak->>Frontend: Access Token
+
+        </div>
+
+    </section>
+
+    <section id="oidc">
+
+        <h2>4. OpenID Connect</h2>
+
+        <p>
+
+            OIDC được xây dựng trên OAuth2.
+
+        </p>
+
+        <p>
+
+            OAuth2 trả lời:
+
+        </p>
+
+        <ul>
+            <li>Người dùng được phép truy cập?</li>
+        </ul>
+
+        <p>
+
+            OIDC trả lời:
+
+        </p>
+
+        <ul>
+            <li>Người dùng là ai?</li>
+        </ul>
+
+        <h3>ID Token</h3>
+
+        <p>
+
+            OIDC giới thiệu ID Token.
+
+        </p>
+
+        <p>
+
+            ID Token chứa thông tin người dùng:
+
+        </p>
+
+        <ul>
+
+            <li>sub</li>
+            <li>email</li>
+            <li>name</li>
+            <li>preferred_username</li>
+
+        </ul>
+
+    </section>
+
+    <section id="jwt">
+
+        <h2>5. JWT</h2>
+
+        <p>
+
+            JSON Web Token.
+
+        </p>
+
+        Ví dụ:
+
+        <pre>
+<code class="language-json">
+{
+ "sub":"123",
+ "preferred_username":"admin",
+ "email":"admin@company.vn",
+ "realm_access":{
+   "roles":[
+      "ADMIN"
+   ]
+ }
+}
+</code>
+</pre>
+
+        <h3>Cấu trúc JWT</h3>
+
+        <div class="mermaid">
+
+            flowchart LR
+
+            A[Header]
+            -->
+            B[Payload]
+            -->
+            C[Signature]
+
+        </div>
+
+        <h3>Claims phổ biến</h3>
+
+        <table>
+
+            <tr>
+                <th>Claim</th>
+                <th>Ý nghĩa</th>
+            </tr>
+
+            <tr>
+                <td>sub</td>
+                <td>User ID</td>
+            </tr>
+
+            <tr>
+                <td>exp</td>
+                <td>Expiration</td>
+            </tr>
+
+            <tr>
+                <td>iat</td>
+                <td>Issued At</td>
+            </tr>
+
+            <tr>
+                <td>aud</td>
+                <td>Audience</td>
+            </tr>
+
+            <tr>
+                <td>realm_access</td>
+                <td>Roles</td>
+            </tr>
+
+        </table>
+
+    </section>
+
+    <section id="architecture">
+
+        <h2>6. KIẾN TRÚC KEYCLOAK</h2>
+
+        <div class="mermaid">
+
+            flowchart LR
+
+            User[User]
+
+            FE[Frontend]
+
+            KC[Keycloak]
+
+            BE[Backend]
+
+            DB[(Database)]
+
+            User --> FE
+
+            FE --> KC
+
+            FE --> BE
+
+            BE --> KC
+
+            BE --> DB
+
+        </div>
+
+        <h3>Luồng xử lý</h3>
+
+        <ol>
+
+            <li>User truy cập Frontend</li>
+            <li>Frontend redirect sang Keycloak</li>
+            <li>Keycloak xác thực</li>
+            <li>Frontend nhận Token</li>
+            <li>Frontend gọi API</li>
+            <li>Backend xác thực JWT</li>
+
+        </ol>
+
+    </section>
+
+    <section id="install">
+
+        <h2>7. CÀI ĐẶT KEYCLOAK</h2>
+
+        <h3>Docker</h3>
+
+        <pre>
+<code class="language-bash">
+docker run -d \
+--name keycloak \
+-p 8080:8080 \
+-e KEYCLOAK_ADMIN=admin \
+-e KEYCLOAK_ADMIN_PASSWORD=admin123 \
+quay.io/keycloak/keycloak:latest \
+start-dev
+</code>
+</pre>
+
+        <h3>Truy cập</h3>
+
+        <pre>
+http://localhost:8080
+</pre>
+
+        <h3>Admin Console</h3>
+
+        <pre>
+http://localhost:8080/admin
+</pre>
+
+        <div class="warning">
+
+            Không dùng start-dev cho Production.
+
+        </div>
+
+    </section>
+
+    <section id="realm">
+
+        <h2>8. REALM</h2>
+
+        <p>
+
+            Realm là vùng quản trị độc lập.
+
+        </p>
+
+        <table>
+
+            <tr>
+                <th>Realm</th>
+                <th>Môi trường</th>
+            </tr>
+
+            <tr>
+                <td>dev</td>
+                <td>Development</td>
+            </tr>
+
+            <tr>
+                <td>uat</td>
+                <td>UAT</td>
+            </tr>
+
+            <tr>
+                <td>prod</td>
+                <td>Production</td>
+            </tr>
+
+        </table>
+
+        <h3>Khuyến nghị</h3>
+
+        <ul>
+
+            <li>1 realm cho DEV</li>
+            <li>1 realm cho UAT</li>
+            <li>1 realm cho PROD</li>
+
+        </ul>
+
+    </section>
+
+    <section id="client">
+
+        <h2>9. CLIENT</h2>
+
+        <p>
+
+            Client đại diện cho ứng dụng.
+
+        </p>
+
+        <table>
+
+            <tr>
+                <th>Client</th>
+                <th>Loại</th>
+            </tr>
+
+            <tr>
+                <td>portal-web</td>
+                <td>React</td>
+            </tr>
+
+            <tr>
+                <td>mobile-app</td>
+                <td>Flutter</td>
+            </tr>
+
+            <tr>
+                <td>backend-api</td>
+                <td>Spring Boot</td>
+            </tr>
+
+        </table>
+
+        <h3>Client Types</h3>
+
+        <ul>
+
+            <li>Public Client</li>
+            <li>Confidential Client</li>
+
+        </ul>
+
+        <h3>Public Client</h3>
+
+        <ul>
+
+            <li>React</li>
+            <li>Angular</li>
+            <li>Vue</li>
+
+        </ul>
+
+        <h3>Confidential Client</h3>
+
+        <ul>
+
+            <li>Backend API</li>
+            <li>Scheduler</li>
+            <li>Microservice</li>
+
+        </ul>
+
+    </section>
+
+    <section id="login">
+
+        <h2>10. LOGIN FLOW</h2>
+
+        <div class="mermaid">
+
+            sequenceDiagram
+
+            actor User
+
+            participant FE
+
+            participant KC
+
+            participant BE
+
+            User->>FE: Truy cập
+
+            FE->>KC: Redirect Login
+
+            KC->>User: Form Login
+
+            User->>KC: Username Password
+
+            KC->>FE: Authorization Code
+
+            FE->>KC: Exchange Token
+
+            KC->>FE: Access Token
+
+            FE->>BE: Call API
+
+            BE->>KC: Verify Token
+
+            KC->>BE: Token Valid
+
+            BE->>FE: Data
+
+        </div>
+
+        <h3>Các loại Token</h3>
+
+        <table>
+
+            <tr>
+                <th>Token</th>
+                <th>Chức năng</th>
+            </tr>
+
+            <tr>
+                <td>Access Token</td>
+                <td>Gọi API</td>
+            </tr>
+
+            <tr>
+                <td>Refresh Token</td>
+                <td>Làm mới Token</td>
+            </tr>
+
+            <tr>
+                <td>ID Token</td>
+                <td>Thông tin User</td>
+            </tr>
+
+        </table>
+
+        <div class="note">
+
+            Khuyến nghị sử dụng Authorization Code Flow + PKCE.
+
+        </div>
+
+    </section>
+
+    <!-- ===================================================== -->
+
+    <section id="custom-fe-login">
+
+        <h2>10B. CUSTOM FRONTEND LOGIN FORM (DIRECT GRANT)</h2>
+
+        <p>
+            Trong một số trường hợp, doanh nghiệp muốn thiết kế Form đăng nhập trực tiếp tại giao diện Frontend (React, Vue, Angular...) thay vì chuyển hướng (Redirect) sang trang mặc định của Keycloak.
+        </p>
+
+        <p>
+            Để thực hiện điều này, chúng ta sử dụng luồng <strong>Resource Owner Password Credentials Grant (Direct Access Grant)</strong> của OAuth2 để trao đổi trực tiếp username/password lấy token qua REST API của Keycloak.
+        </p>
+
+        <div class="warning">
+            Luồng Direct Grant không được khuyến nghị cho các dự án ứng dụng công cộng (public clients) vì lý do bảo mật (Frontend có thể nhìn thấy và can thiệp trực tiếp vào thông tin đăng nhập của người dùng). Hãy cân nhắc kỹ trước khi sử dụng.
+        </div>
+
+        <h3>Bước 1: Bật Direct Access Grants trên Keycloak Console</h3>
+        <p>
+            Mặc định, Keycloak có thể chặn yêu cầu trực tiếp này. Bạn cần cấu hình Client trên Keycloak:
+        </p>
+        <ul>
+            <li>Vào <strong>Clients</strong> → Chọn Client ID của bạn (ví dụ: <code>hienbx_fe</code>).</li>
+            <li>Trong phần <strong>Capability config</strong>, tìm và bật toggle <strong>Direct Access Grants Enabled</strong>.</li>
+            <li>Bấm <strong>Save</strong> để áp dụng.</li>
+        </ul>
+
+        <h3>Bước 2: Gửi Request Đăng Nhập từ Frontend (Axios)</h3>
+        <p>
+            Frontend sẽ hiển thị Form đăng nhập tự thiết kế và gửi yêu cầu POST đến endpoint token của Keycloak với Content-Type là <code>application/x-www-form-urlencoded</code>:
+        </p>
+
+        <pre><code class="language-typescript">
+import axios from 'axios';
+
+async function loginDirectly(username, password) {
+  const tokenUrl = 'https://keycloak.hiendev.online/realms/hienbx/protocol/openid-connect/token';
+  
+  // Tạo form data body
+  const params = new URLSearchParams();
+  params.append('client_id', 'hienbx_fe');
+  params.append('grant_type', 'password');
+  params.append('username', username);
+  params.append('password', password);
+  params.append('scope', 'openid profile email');
+
+  try {
+    const response = await axios.post(tokenUrl, params, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
+
+    const { access_token, refresh_token, id_token, expires_in } = response.data;
+    
+    // Lưu token vào LocalStorage/SessionStorage hoặc HttpOnly Cookie
+    localStorage.setItem('access_token', access_token);
+    localStorage.setItem('refresh_token', refresh_token);
+    
+    console.log('Đăng nhập thành công!', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Đăng nhập thất bại:', error.response?.data || error.message);
+    throw new Error('Sai tài khoản hoặc mật khẩu.');
+  }
+}
+        </code></pre>
+
+        <h3>Bước 3: Gửi Refresh Token để duy trì đăng nhập</h3>
+        <p>
+            Khi Access Token hết hạn, dùng Refresh Token gửi POST tương tự để làm mới token:
+        </p>
+        <pre><code class="language-typescript">
+async function refreshToken(storedRefreshToken) {
+  const tokenUrl = 'https://keycloak.hiendev.online/realms/hienbx/protocol/openid-connect/token';
+  
+  const params = new URLSearchParams();
+  params.append('client_id', 'hienbx_fe');
+  params.append('grant_type', 'refresh_token');
+  params.append('refresh_token', storedRefreshToken);
+
+  const response = await axios.post(tokenUrl, params, {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
+  });
+
+  return response.data; // Trả về access_token và refresh_token mới
+}
+        </code></pre>
+
+    </section>
+
+    <!-- ===================================================== -->
+
+<!-- Moved closing tags to the end of the file -->
+<!-- ===================================================== -->
+<!-- CHƯƠNG 11 → 25 -->
+<!-- NỐI TIẾP PHẦN 1 -->
+<!-- ===================================================== -->
+
+<section id="user">
+
+    <h2>11. USER MANAGEMENT</h2>
+
+    <p>
+        User là đối tượng đại diện cho người sử dụng hệ thống.
+    </p>
+
+    <h3>Tạo User</h3>
+
+    <p>
+
+        Menu:
+
+    </p>
+
+    <pre>
+Users
+→ Add User
+</pre>
+
+    <table>
+
+        <tr>
+            <th>Thuộc tính</th>
+            <th>Mô tả</th>
+        </tr>
+
+        <tr>
+            <td>Username</td>
+            <td>Tên đăng nhập</td>
+        </tr>
+
+        <tr>
+            <td>Email</td>
+            <td>Email người dùng</td>
+        </tr>
+
+        <tr>
+            <td>First Name</td>
+            <td>Tên</td>
+        </tr>
+
+        <tr>
+            <td>Last Name</td>
+            <td>Họ</td>
+        </tr>
+
+        <tr>
+            <td>Enabled</td>
+            <td>Kích hoạt tài khoản</td>
+        </tr>
+
+    </table>
+
+    <h3>Credentials</h3>
+
+    <p>
+
+        Đặt mật khẩu tại:
+
+    </p>
+
+    <pre>
+User
+→ Credentials
+→ Set Password
+</pre>
+
+    <div class="note">
+
+        Temporary Password = ON
+
+        Bắt người dùng đổi mật khẩu ở lần đăng nhập đầu tiên.
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="role">
+
+    <h2>12. ROLE MANAGEMENT</h2>
+
+    <p>
+
+        Role là quyền của người dùng.
+
+    </p>
+
+    <h3>Realm Role</h3>
+
+    <pre>
+ADMIN
+MANAGER
+USER
+AUDITOR
+</pre>
+
+    <h3>Client Role</h3>
+
+    <pre>
+portal-admin
+portal-view
+portal-create
+portal-delete
+</pre>
+
+    <table>
+
+        <tr>
+            <th>Role</th>
+            <th>Mục đích</th>
+        </tr>
+
+        <tr>
+            <td>ADMIN</td>
+            <td>Quản trị hệ thống</td>
+        </tr>
+
+        <tr>
+            <td>MANAGER</td>
+            <td>Quản lý</td>
+        </tr>
+
+        <tr>
+            <td>USER</td>
+            <td>Người dùng thông thường</td>
+        </tr>
+
+    </table>
+
+    <div class="success">
+
+        Nên sử dụng Role-Based Access Control (RBAC).
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="group">
+
+    <h2>13. GROUP MANAGEMENT</h2>
+
+    <p>
+
+        Group giúp quản lý người dùng theo phòng ban.
+
+    </p>
+
+    Ví dụ:
+
+    <pre>
+Company
+
+├── IT
+
+├── HR
+
+├── Finance
+
+└── Management
+</pre>
+
+    <h3>Lợi ích</h3>
+
+    <ul>
+
+        <li>Gán role cho nhóm</li>
+
+        <li>Quản lý tập trung</li>
+
+        <li>Không cần gán role từng user</li>
+
+    </ul>
+
+    <div class="note">
+
+        Một user có thể thuộc nhiều group.
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="client-config">
+
+    <h2>14. CẤU HÌNH LOGIN CHI TIẾT</h2>
+
+    <h3>Root URL</h3>
+
+    <p>
+
+        URL gốc của ứng dụng.
+
+    </p>
+
+    <pre>
+https://portal.company.vn
+</pre>
+
+    <h3>Home URL</h3>
+
+    <p>
+
+        URL chuyển hướng sau login.
+
+    </p>
+
+    <pre>
+https://portal.company.vn/dashboard
+</pre>
+
+    <h3>Valid Redirect URIs</h3>
+
+    <p>
+
+        Danh sách URL được phép redirect.
+
+    </p>
+
+    <pre>
+https://portal.company.vn/*
+</pre>
+
+    <div class="warning">
+
+        Không dùng dấu *
+
+        ở Production.
+
+    </div>
+
+    <h3>Valid Post Logout Redirect URIs</h3>
+
+    <p>
+
+        URL được phép redirect sau logout.
+
+    </p>
+
+    <pre>
+https://portal.company.vn/login
+</pre>
+
+    <h3>Web Origins</h3>
+
+    <p>
+
+        Cấu hình CORS.
+
+    </p>
+
+    <pre>
+https://portal.company.vn
+</pre>
+
+    <h3>Client Authentication</h3>
+
+    <table>
+
+        <tr>
+            <th>Loại</th>
+            <th>Authentication</th>
+        </tr>
+
+        <tr>
+            <td>React</td>
+            <td>OFF</td>
+        </tr>
+
+        <tr>
+            <td>Angular</td>
+            <td>OFF</td>
+        </tr>
+
+        <tr>
+            <td>Backend API</td>
+            <td>ON</td>
+        </tr>
+
+    </table>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="logout">
+
+    <h2>15. LOGOUT FLOW</h2>
+
+    <div class="mermaid">
+
+        sequenceDiagram
+
+        User->>Frontend: Logout
+
+        Frontend->>Keycloak: Logout Request
+
+        Keycloak->>Keycloak: Remove Session
+
+        Keycloak-->>Frontend: Redirect
+
+        Frontend-->>User: Login Page
+
+    </div>
+
+    <h3>JavaScript</h3>
+
+    <pre><code class="language-javascript">
+
+keycloak.logout();
+
+</code></pre>
+
+    <h3>Logout URL</h3>
+
+    <pre>
+https://keycloak.company.vn
+/protocol/openid-connect/logout
+</pre>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="refresh-token">
+
+    <h2>16. REFRESH TOKEN</h2>
+
+    <p>
+
+        Access Token có thời gian sống ngắn.
+
+    </p>
+
+    Ví dụ:
+
+    <table>
+
+        <tr>
+            <th>Token</th>
+            <th>Thời gian</th>
+        </tr>
+
+        <tr>
+            <td>Access Token</td>
+            <td>5 phút</td>
+        </tr>
+
+        <tr>
+            <td>Refresh Token</td>
+            <td>30 phút</td>
+        </tr>
+
+    </table>
+
+    <h3>Refresh tự động</h3>
+
+    <pre><code class="language-javascript">
+
+setInterval(() => {
+
+  keycloak.updateToken(60);
+
+}, 10000);
+
+</code></pre>
+
+    <div class="success">
+
+        Không yêu cầu người dùng đăng nhập lại liên tục.
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="smtp">
+
+    <h2>17. SMTP CONFIGURATION</h2>
+
+    <p>
+
+        Dùng cho:
+
+    </p>
+
+    <ul>
+
+        <li>Quên mật khẩu</li>
+
+        <li>Xác minh Email</li>
+
+        <li>Thông báo hệ thống</li>
+
+    </ul>
+
+    <h3>Cấu hình</h3>
+
+    <pre>
+
+Realm Settings
+→ Email
+
+</pre>
+
+    <table>
+
+        <tr>
+            <th>Thông số</th>
+            <th>Ví dụ</th>
+        </tr>
+
+        <tr>
+            <td>Host</td>
+            <td>smtp.gmail.com</td>
+        </tr>
+
+        <tr>
+            <td>Port</td>
+            <td>587</td>
+        </tr>
+
+        <tr>
+            <td>User</td>
+            <td>admin@gmail.com</td>
+        </tr>
+
+        <tr>
+            <td>Password</td>
+            <td>App Password</td>
+        </tr>
+
+    </table>
+
+    <div class="warning">
+
+        Không sử dụng mật khẩu Gmail thông thường.
+
+        Phải dùng App Password.
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="forgot-password">
+
+    <h2>18. FORGOT PASSWORD</h2>
+
+    <p>
+
+        Cho phép người dùng tự đặt lại mật khẩu.
+
+    </p>
+
+    <h3>Bật tính năng</h3>
+
+    <pre>
+
+Realm Settings
+→ Login
+→ Forgot Password
+
+ON
+
+</pre>
+
+    <h3>Luồng xử lý</h3>
+
+    <div class="mermaid">
+
+        sequenceDiagram
+
+        User->>Keycloak: Forgot Password
+
+        Keycloak->>SMTP: Send Email
+
+        SMTP-->>User: Reset Link
+
+        User->>Keycloak: New Password
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="otp">
+
+    <h2>19. MULTI FACTOR AUTHENTICATION</h2>
+
+    <p>
+
+        Xác thực hai lớp.
+
+    </p>
+
+    <h3>Các phương thức</h3>
+
+    <ul>
+
+        <li>TOTP</li>
+
+        <li>Email OTP</li>
+
+        <li>WebAuthn</li>
+
+    </ul>
+
+    <h3>Kích hoạt OTP</h3>
+
+    <pre>
+
+Authentication
+→ Required Actions
+→ Configure OTP
+
+</pre>
+
+    <div class="mermaid">
+
+        flowchart LR
+
+        Password
+
+        -->
+
+        OTP
+
+        -->
+
+        Access
+
+    </div>
+
+    <div class="success">
+
+        Bắt buộc bật MFA cho tài khoản Admin.
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="google-login">
+
+    <h2>20. GOOGLE LOGIN</h2>
+
+    <p>
+
+        Cho phép đăng nhập bằng tài khoản Google.
+
+    </p>
+
+    <h3>Cấu hình</h3>
+
+    <pre>
+
+Identity Providers
+→ Google
+
+</pre>
+
+    Thông tin cần nhập:
+
+    <table>
+
+        <tr>
+            <th>Thuộc tính</th>
+            <th>Giá trị</th>
+        </tr>
+
+        <tr>
+            <td>Client ID</td>
+            <td>Từ Google Cloud</td>
+        </tr>
+
+        <tr>
+            <td>Client Secret</td>
+            <td>Từ Google Cloud</td>
+        </tr>
+
+    </table>
+
+    <h3>Luồng xử lý</h3>
+
+    <div class="mermaid">
+
+        sequenceDiagram
+
+        User->>Keycloak: Login Google
+
+        Keycloak->>Google: Authentication
+
+        Google-->>Keycloak: User Info
+
+        Keycloak-->>User: Login Success
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="ldap">
+
+    <h2>21. LDAP INTEGRATION</h2>
+
+    <p>
+
+        Kết nối hệ thống LDAP doanh nghiệp.
+
+    </p>
+
+    <h3>Menu</h3>
+
+    <pre>
+
+User Federation
+→ LDAP
+
+</pre>
+
+    Thông số:
+
+    <table>
+
+        <tr>
+            <th>Thông số</th>
+            <th>Ví dụ</th>
+        </tr>
+
+        <tr>
+            <td>LDAP URL</td>
+            <td>ldap://10.10.10.10:389</td>
+        </tr>
+
+        <tr>
+            <td>Bind DN</td>
+            <td>cn=admin,dc=company</td>
+        </tr>
+
+        <tr>
+            <td>Bind Credential</td>
+            <td>password</td>
+        </tr>
+
+    </table>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="active-directory">
+
+    <h2>22. ACTIVE DIRECTORY</h2>
+
+    <p>
+
+        Tích hợp Microsoft AD.
+
+    </p>
+
+    <h3>Mục đích</h3>
+
+    <ul>
+
+        <li>SSO nội bộ</li>
+
+        <li>Đồng bộ User</li>
+
+        <li>Đồng bộ Group</li>
+
+    </ul>
+
+    <div class="success">
+
+        Không cần tạo lại User trong Keycloak.
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="theme">
+
+        <h2>23. LOGIN THEME</h2>
+
+        <p>
+            Keycloak hỗ trợ tùy biến giao diện đăng nhập (Login Theme) theo nhận diện thương hiệu của doanh nghiệp (Logo, màu sắc, phông chữ, bố cục).
+        </p>
+
+        <h3>Cấu trúc thư mục Theme</h3>
+        <p>
+            Một Theme tùy biến cần được đặt trong thư mục <code>themes/</code> của Keycloak với cấu trúc tối thiểu như sau:
+        </p>
+
+        <pre>
+themes/
+└── company-theme/              <!-- Tên theme của bạn -->
+    └── login/                  <!-- Loại theme (login, account, admin, email) -->
+        ├── theme.properties    <!-- File cấu hình kế thừa và CSS/JS -->
+        ├── login.ftl           <!-- Trang giao diện đăng nhập chính (Freemarker) -->
+        ├── template.ftl        <!-- Khung bố cục chung cho tất cả các trang của login -->
+        └── resources/          <!-- Tài nguyên tĩnh -->
+            ├── css/
+            │   └── custom-style.css
+            ├── img/
+            │   └── logo.png
+            └── js/
+                └── main.js
+        </pre>
+
+        <h3>Chi tiết các File cấu hình</h3>
+        
+        <h4>1. File <code>theme.properties</code></h4>
+        <p>
+            Định nghĩa các thuộc tính của theme, liên kết CSS/JS và chỉ định theme cha để kế thừa:
+        </p>
+        <pre><code class="language-properties">
+# Kế thừa từ theme base hoặc keycloak mặc định để không phải viết lại tất cả file ftl
+parent=keycloak
+
+# Nạp file CSS tùy biến
+styles=css/custom-style.css
+
+# Nạp file JS tùy biến (nếu có)
+scripts=js/main.js
+
+# Khai báo các class CSS để override lại styles mặc định của Keycloak
+kcHtmlClass=login-pf
+kcLoginClass=login-card-pf
+        </code></pre>
+
+        <h4>2. File <code>login.ftl</code> (Freemarker Template)</h4>
+        <p>
+            Đây là mã nguồn HTML + Freemarker (FTL) định nghĩa Form nhập tài khoản mật khẩu:
+        </p>
+        <pre><code class="language-html">
+&lt;#import "template.ftl" as layout&gt;
+&lt;@layout.registrationLayout displayMessage=!messagesPerField.existsError('username','password') displayInfo=realm.password &amp;&amp; realm.registrationAllowed &amp;&amp; !registrationDisabled??; section&gt;
+    &lt;#if section = "header"&gt;
+        &lt;!-- Phần tiêu đề hiển thị trên thẻ card --&gt;
+        &lt;h3&gt;Đăng nhập vào hệ thống&lt;/h3&gt;
+    &lt;#elseif section = "form"&gt;
+        &lt;!-- Form đăng nhập chính --&gt;
+        &lt;form id="kc-form-login" onsubmit="login.disabled = true; return true;" action="${url.loginAction}" method="post"&gt;
+            &lt;div class="form-group"&gt;
+                &lt;label for="username"&gt;Tên đăng nhập hoặc Email&lt;/label&gt;
+                &lt;input id="username" class="form-control" name="username" value="${(login.username!'')}" type="text" autofocus autocomplete="off" /&gt;
+            &lt;/div&gt;
+
+            &lt;div class="form-group"&gt;
+                &lt;label for="password"&gt;Mật khẩu&lt;/label&gt;
+                &lt;input id="password" class="form-control" name="password" type="password" autocomplete="off" /&gt;
+            &lt;/div&gt;
+
+            &lt;div class="form-actions"&gt;
+                &lt;input class="btn btn-primary" name="login" id="kc-login" type="submit" value="Đăng nhập"/&gt;
+            &lt;/div&gt;
+        &lt;/form&gt;
+    &lt;/#if&gt;
+&lt;/@layout.registrationLayout&gt;
+        </code></pre>
+
+        <h3>Cách triển khai và kích hoạt Theme</h3>
+        
+        <h4>Triển khai với Docker</h4>
+        <p>
+            Nếu chạy Keycloak bằng Docker, bạn cần gắn (mount) thư mục theme vào container:
+        </p>
+        <pre><code class="language-yaml">
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2.4
+    volumes:
+      - ./themes/company-theme:/opt/keycloak/themes/company-theme
+    ports:
+      - 8080:8080
+        </code></pre>
+
+        <h4>Kích hoạt trong Keycloak Admin Console</h4>
+        <ul>
+            <li>Truy cập vào <strong>Keycloak Admin Console</strong>.</li>
+            <li>Chọn Realm của bạn (ví dụ: <code>hienbx</code>).</li>
+            <li>Vào menu <strong>Realm Settings</strong> từ thanh menu bên trái → Chọn tab <strong>Themes</strong>.</li>
+            <li>Tại mục <strong>Login Theme</strong>, chọn theme tùy biến của bạn (ví dụ: <code>company-theme</code>).</li>
+            <li>Bấm <strong>Save</strong>. Hãy thử logout và mở lại trang login để tận hưởng giao diện mới.</li>
+        </ul>
+
+    </section>
+
+<!-- ===================================================== -->
+
+<section id="event-log">
+
+    <h2>24. EVENT LOGGING</h2>
+
+    <p>
+
+        Theo dõi hoạt động đăng nhập.
+
+    </p>
+
+    <h3>Bật Event</h3>
+
+    <pre>
+
+Realm Settings
+→ Events
+
+</pre>
+
+    Các sự kiện:
+
+    <ul>
+
+        <li>LOGIN</li>
+
+        <li>LOGOUT</li>
+
+        <li>REGISTER</li>
+
+        <li>RESET PASSWORD</li>
+
+        <li>UPDATE PROFILE</li>
+
+    </ul>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="audit">
+
+    <h2>25. AUDIT LOG</h2>
+
+    <p>
+
+        Theo dõi hành động quản trị.
+
+    </p>
+
+    Ví dụ:
+
+    <table>
+
+        <tr>
+            <th>Thời gian</th>
+            <th>Người dùng</th>
+            <th>Hành động</th>
+        </tr>
+
+        <tr>
+            <td>2026-01-01</td>
+            <td>admin</td>
+            <td>Create Client</td>
+        </tr>
+
+        <tr>
+            <td>2026-01-02</td>
+            <td>admin</td>
+            <td>Create Role</td>
+        </tr>
+
+        <tr>
+            <td>2026-01-03</td>
+            <td>admin</td>
+            <td>Delete User</td>
+        </tr>
+
+    </table>
+
+    <div class="warning">
+
+        Audit Log cần được lưu trữ dài hạn
+        để phục vụ kiểm toán và điều tra sự cố.
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+<!-- KẾT THÚC PHẦN 2 -->
+<!-- ===================================================== -->
+<!-- ===================================================== -->
+<!-- CHƯƠNG 26 → 42 -->
+<!-- KEYCLOAK WIKI - PHẦN 3 -->
+<!-- ===================================================== -->
+
+<section id="react">
+
+    <h2>26. REACT INTEGRATION</h2>
+
+    <p>
+        Tích hợp React với Keycloak sử dụng keycloak-js.
+    </p>
+
+    <h3>Cài đặt</h3>
+
+    <pre><code class="language-bash">
+npm install keycloak-js
+</code></pre>
+
+    <h3>keycloak.js</h3>
+
+    <pre><code class="language-javascript">
+import Keycloak from 'keycloak-js';
+
+const keycloak = new Keycloak({
+  url: 'https://sso.company.vn',
+  realm: 'company-prod',
+  clientId: 'portal-web'
+});
+
+export default keycloak;
+</code></pre>
+
+    <h3>Khởi tạo</h3>
+
+    <pre><code class="language-javascript">
+keycloak.init({
+  onLoad:'login-required',
+  pkceMethod:'S256'
+});
+</code></pre>
+
+    <div class="success">
+        Khuyến nghị luôn bật PKCE cho SPA.
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="angular">
+
+    <h2>27. ANGULAR INTEGRATION</h2>
+
+    <pre><code class="language-bash">
+npm install keycloak-angular
+</code></pre>
+
+    <h3>app.module.ts</h3>
+
+    <pre><code class="language-typescript">
+KeycloakService.init({
+ config:{
+   url:'https://sso.company.vn',
+   realm:'company-prod',
+   clientId:'portal-web'
+ }
+});
+</code></pre>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="vue">
+
+    <h2>28. VUE INTEGRATION</h2>
+
+    <pre><code class="language-javascript">
+const keycloak = new Keycloak({
+ url:'https://sso.company.vn',
+ realm:'company-prod',
+ clientId:'portal-web'
+});
+</code></pre>
+
+    <p>
+        Cấu hình tương tự React.
+    </p>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="spring">
+
+    <h2>29. SPRING BOOT RESOURCE SERVER</h2>
+
+    <h3>Dependency</h3>
+
+    <pre><code class="language-xml">
+<dependency>
+ <groupId>
+ org.springframework.boot
+ </groupId>
+
+ <artifactId>
+ spring-boot-starter-oauth2-resource-server
+ </artifactId>
+</dependency>
+</code></pre>
+
+    <h3>application.yml</h3>
+
+    <pre><code class="language-yaml">
+spring:
+
+ security:
+
+  oauth2:
+
+   resourceserver:
+
+    jwt:
+
+     issuer-uri:
+      https://sso.company.vn
+      /realms/company-prod
+</code></pre>
+
+    <h3>SecurityConfig</h3>
+
+    <pre><code class="language-java">
+@Bean
+
+SecurityFilterChain filterChain(
+ HttpSecurity http
+) throws Exception {
+
+ return http
+
+  .authorizeHttpRequests(auth -> auth
+
+   .requestMatchers("/admin/**")
+   .hasRole("ADMIN")
+
+   .anyRequest()
+   .authenticated()
+
+  )
+
+  .oauth2ResourceServer(
+      oauth -> oauth.jwt()
+  )
+
+  .build();
+
+}
+</code></pre>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="dotnet">
+
+    <h2>30. .NET API</h2>
+
+    <h3>Program.cs</h3>
+
+    <pre><code class="language-csharp">
+builder.Services
+
+.AddAuthentication("Bearer")
+
+.AddJwtBearer(options =>
+{
+
+ options.Authority =
+ "https://sso.company.vn/realms/company-prod";
+
+ options.Audience =
+ "backend-api";
+
+});
+</code></pre>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="jwt-mapping">
+
+    <h2>31. JWT CLAIM MAPPING</h2>
+
+    <p>
+        Các Role thường nằm trong claim:
+    </p>
+
+    <pre><code class="language-json">
+{
+ "realm_access":{
+   "roles":[
+      "ADMIN"
+   ]
+ }
+}
+</code></pre>
+
+    <h3>Ví dụ Claims</h3>
+
+    <table>
+
+        <tr>
+            <th>Claim</th>
+            <th>Ý nghĩa</th>
+        </tr>
+
+        <tr>
+            <td>sub</td>
+            <td>User ID</td>
+        </tr>
+
+        <tr>
+            <td>preferred_username</td>
+            <td>Tên đăng nhập</td>
+        </tr>
+
+        <tr>
+            <td>email</td>
+            <td>Email</td>
+        </tr>
+
+        <tr>
+            <td>exp</td>
+            <td>Ngày hết hạn</td>
+        </tr>
+
+    </table>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="rbac">
+
+    <h2>32. ROLE BASED ACCESS CONTROL</h2>
+
+    <div class="mermaid">
+
+        flowchart TD
+
+        ADMIN --> Create
+
+        ADMIN --> Delete
+
+        ADMIN --> Update
+
+        USER --> View
+
+        MANAGER --> Report
+
+    </div>
+
+    <h3>Mô hình đề xuất</h3>
+
+    <table>
+
+        <tr>
+            <th>Role</th>
+            <th>Quyền</th>
+        </tr>
+
+        <tr>
+            <td>ADMIN</td>
+            <td>Toàn quyền</td>
+        </tr>
+
+        <tr>
+            <td>MANAGER</td>
+            <td>Quản lý</td>
+        </tr>
+
+        <tr>
+            <td>USER</td>
+            <td>Sử dụng hệ thống</td>
+        </tr>
+
+    </table>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="authorization-services">
+
+    <h2>33. AUTHORIZATION SERVICES</h2>
+
+    <p>
+        Authorization Services cho phép
+        quản lý Permission chi tiết.
+    </p>
+
+    <h3>Thành phần</h3>
+
+    <ul>
+
+        <li>Resource</li>
+
+        <li>Scope</li>
+
+        <li>Policy</li>
+
+        <li>Permission</li>
+
+    </ul>
+
+    Ví dụ:
+
+    <pre>
+Project A
+
+Project B
+
+Project C
+</pre>
+
+    User chỉ xem được Project A.
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="docker-compose">
+
+    <h2>34. DOCKER COMPOSE PRODUCTION</h2>
+
+    <pre><code class="language-yaml">
+version: "3.9"
+
+services:
+
+ postgres:
+
+  image: postgres:17
+
+  restart: always
+
+  environment:
+
+   POSTGRES_DB: keycloak
+
+   POSTGRES_USER: keycloak
+
+   POSTGRES_PASSWORD: change_me
+
+ keycloak:
+
+  image: quay.io/keycloak/keycloak:latest
+
+  command: start
+
+  environment:
+
+   KC_DB: postgres
+
+   KC_DB_URL_HOST: postgres
+
+   KC_DB_USERNAME: keycloak
+
+   KC_DB_PASSWORD: change_me
+
+   KC_HOSTNAME: sso.company.vn
+
+  ports:
+
+   - "8080:8080"
+
+</code></pre>
+
+    <div class="warning">
+
+        Không sử dụng H2 Database
+        trong Production.
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="nginx">
+
+    <h2>35. NGINX REVERSE PROXY</h2>
+
+    <pre><code class="language-nginx">
+server {
+
+ listen 443 ssl;
+
+ server_name sso.company.vn;
+
+ location / {
+
+   proxy_pass
+   http://keycloak:8080;
+
+   proxy_set_header Host $host;
+
+   proxy_set_header
+   X-Forwarded-For
+   $proxy_add_x_forwarded_for;
+
+ }
+
+}
+</code></pre>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="ssl">
+
+    <h2>36. HTTPS SSL</h2>
+
+    <div class="success">
+
+        Bắt buộc sử dụng HTTPS.
+
+    </div>
+
+    <h3>Let's Encrypt</h3>
+
+    <pre><code class="language-bash">
+certbot --nginx
+</code></pre>
+
+    <h3>Lợi ích</h3>
+
+    <ul>
+
+        <li>Mã hóa dữ liệu</li>
+
+        <li>Bảo vệ Token</li>
+
+        <li>Tuân thủ bảo mật</li>
+
+    </ul>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="backup">
+
+    <h2>37. BACKUP & RESTORE</h2>
+
+    <h3>Backup PostgreSQL</h3>
+
+    <pre><code class="language-bash">
+pg_dump
+
+-U keycloak
+
+-F c
+
+-d keycloak
+
+> backup.dump
+</code></pre>
+
+    <h3>Restore</h3>
+
+    <pre><code class="language-bash">
+pg_restore
+
+-d keycloak
+
+backup.dump
+</code></pre>
+
+    <div class="warning">
+
+        Kiểm tra restore định kỳ.
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="monitoring">
+
+    <h2>38. MONITORING</h2>
+
+    <h3>Công cụ đề xuất</h3>
+
+    <ul>
+
+        <li>Prometheus</li>
+
+        <li>Grafana</li>
+
+        <li>Loki</li>
+
+        <li>ELK</li>
+
+    </ul>
+
+    <h3>Theo dõi</h3>
+
+    <ul>
+
+        <li>CPU</li>
+
+        <li>Memory</li>
+
+        <li>Login Failures</li>
+
+        <li>Active Sessions</li>
+
+        <li>Response Time</li>
+
+    </ul>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="cluster">
+
+    <h2>39. HIGH AVAILABILITY</h2>
+
+    <div class="mermaid">
+
+        flowchart LR
+
+        LB[Load Balancer]
+
+        LB --> KC1
+
+        LB --> KC2
+
+        LB --> KC3
+
+        KC1 --> PG[(PostgreSQL)]
+
+        KC2 --> PG
+
+        KC3 --> PG
+
+    </div>
+
+    <p>
+
+        Mục tiêu:
+
+    </p>
+
+    <ul>
+
+        <li>Không downtime</li>
+
+        <li>Scale ngang</li>
+
+        <li>Dự phòng</li>
+
+    </ul>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="kubernetes">
+
+    <h2>40. KUBERNETES</h2>
+
+    <h3>Deployment</h3>
+
+    <pre><code class="language-yaml">
+apiVersion: apps/v1
+
+kind: Deployment
+
+metadata:
+
+ name: keycloak
+
+spec:
+
+ replicas: 3
+
+ selector:
+
+  matchLabels:
+
+   app: keycloak
+</code></pre>
+
+    <div class="success">
+
+        Tối thiểu 3 replicas
+        cho Production lớn.
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="security-checklist">
+
+    <h2>41. SECURITY CHECKLIST</h2>
+
+    <table>
+
+        <tr>
+            <th>Hạng mục</th>
+            <th>Trạng thái</th>
+        </tr>
+
+        <tr>
+            <td>HTTPS</td>
+            <td>✓</td>
+        </tr>
+
+        <tr>
+            <td>MFA Admin</td>
+            <td>✓</td>
+        </tr>
+
+        <tr>
+            <td>Backup</td>
+            <td>✓</td>
+        </tr>
+
+        <tr>
+            <td>Monitoring</td>
+            <td>✓</td>
+        </tr>
+
+        <tr>
+            <td>Audit Log</td>
+            <td>✓</td>
+        </tr>
+
+        <tr>
+            <td>Secret Rotation</td>
+            <td>✓</td>
+        </tr>
+
+    </table>
+
+    <h3>Không nên</h3>
+
+    <ul>
+
+        <li>Dùng master realm</li>
+
+        <li>Dùng start-dev</li>
+
+        <li>Dùng H2 Database</li>
+
+        <li>Web Origins = *</li>
+
+        <li>Lưu Client Secret trong FE</li>
+
+    </ul>
+
+</section>
+
+<!-- ===================================================== -->
+
+<section id="troubleshooting">
+
+    <h2>42. TROUBLESHOOTING & BEST PRACTICES</h2>
+
+    <h3>Invalid Redirect URI</h3>
+
+    <p>
+
+        Kiểm tra:
+
+    </p>
+
+    <pre>
+Valid Redirect URIs
+</pre>
+
+    <h3>CORS Error</h3>
+
+    <p>
+
+        Kiểm tra:
+
+    </p>
+
+    <pre>
+Web Origins
+</pre>
+
+    <h3>Token Expired</h3>
+
+    <p>
+
+        Kiểm tra:
+
+    </p>
+
+    <ul>
+
+        <li>Refresh Token</li>
+
+        <li>Session Timeout</li>
+
+    </ul>
+
+    <h3>Best Practices</h3>
+
+    <ul>
+
+        <li>Dùng Authorization Code + PKCE</li>
+
+        <li>Bật MFA cho Admin</li>
+
+        <li>Realm riêng DEV/UAT/PROD</li>
+
+        <li>Backup PostgreSQL hằng ngày</li>
+
+        <li>Dùng Nginx + HTTPS</li>
+
+        <li>Tách Role và Group</li>
+
+        <li>Theo dõi Audit Log</li>
+
+        <li>Không hard-code quyền trong ứng dụng</li>
+
+        <li>Dùng PostgreSQL Cluster cho Production</li>
+
+        <li>Kiểm tra Restore định kỳ</li>
+
+    </ul>
+
+    <div class="success">
+
+        Hoàn thành toàn bộ 42 chương của Keycloak Internal Wiki.
+
+        Tài liệu này đủ để:
+        - Đào tạo Developer
+        - Đào tạo DevOps
+        - Triển khai SSO doanh nghiệp
+        - Xây dựng quy trình IAM nội bộ
+        - Làm tài liệu onboarding dự án
+
+    </div>
+
+</section>
+
+<!-- ===================================================== -->
+<!-- CHƯƠNG 43: CHI TIẾT DANH MỤC MANAGE (ADMIN CONSOLE) -->
+<!-- ===================================================== -->
+<section id="manage-console">
+    <h2>43. CHI TIẾT DANH MỤC MANAGE (ADMIN CONSOLE)</h2>
+    <p>
+        Danh mục <strong>Manage</strong> tập trung vào việc quản lý các thực thể nghiệp vụ hoạt động hàng ngày trong hệ thống định danh của Realm bao gồm các ứng dụng (Clients), quyền truy cập (Client Scopes, Realm Roles), người dùng (Users), nhóm người dùng (Groups), cũng như giám sát trạng thái hiện tại (Sessions, Events).
+    </p>
+
+    <!-- 43.1 Clients -->
+    <div id="clients-sub" style="margin-top: 30px;">
+        <h3>43.1. Clients</h3>
+        <p>
+            <strong>Clients</strong> đại diện cho các ứng dụng hoặc dịch vụ yêu cầu Keycloak xác thực danh tính người dùng hoặc cấp Token. Có hai loại Client chính: Public Client (cho SPA như React, Vue và Mobile App) và Confidential Client (cho Backend API, Microservices có khả năng giữ Client Secret an toàn).
+        </p>
+
+        <!-- UI Mockup for Clients -->
+        <div class="kc-ui-mockup">
+            <div class="kc-mock-header">
+                <div class="kc-mock-logo">Keycloak Admin Console</div>
+                <div>Realm: <span style="font-weight: 600; color: #3b82f6;">myrealm</span></div>
+            </div>
+            <div class="kc-mock-wrapper">
+                <div class="kc-mock-sidebar">
+                    <div class="kc-mock-sidebar-title">Manage</div>
+                    <div class="kc-mock-sidebar-item active">Clients</div>
+                    <div class="kc-mock-sidebar-item">Client scopes</div>
+                    <div class="kc-mock-sidebar-item">Realm roles</div>
+                    <div class="kc-mock-sidebar-item">Users</div>
+                    <div class="kc-mock-sidebar-item">Groups</div>
+                    <div class="kc-mock-sidebar-item">Sessions</div>
+                    <div class="kc-mock-sidebar-item">Events</div>
+                    <div class="kc-mock-sidebar-title">Configure</div>
+                    <div class="kc-mock-sidebar-item">Realm settings</div>
+                    <div class="kc-mock-sidebar-item">Authentication</div>
+                    <div class="kc-mock-sidebar-item">Identity providers</div>
+                    <div class="kc-mock-sidebar-item">User federation</div>
+                </div>
+                <div class="kc-mock-content">
+                    <div class="kc-mock-title-area">
+                        <h3>Clients &raquo; my-app-client</h3>
+                    </div>
+                    <div class="kc-mock-tabs-nav">
+                        <button class="mock-tab-btn active" onclick="switchMockTab(this, 'cl-tab-settings')">Settings</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'cl-tab-keys')">Keys</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'cl-tab-credentials')">Credentials</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'cl-tab-scopes')">Client Scopes</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'cl-tab-roles')">Roles</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'cl-tab-mappers')">Mappers</button>
+                    </div>
+                    <div class="mock-tab-content">
+                        <!-- Tab Settings -->
+                        <div id="cl-tab-settings" class="mock-tab-pane active">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Client ID</label>
+                                        <input type="text" class="mock-input" value="my-app-client" disabled />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Client Name</label>
+                                        <input type="text" class="mock-input" value="My Application Portal" />
+                                    </div>
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">Client Authentication</span>
+                                            <div class="mock-desc-text">Bật nếu client có khả năng bảo mật thông tin Secret (Backend)</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">Standard Flow Enabled</span>
+                                            <div class="mock-desc-text">Kích hoạt luồng Authorization Code Flow với PKCE</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Valid Redirect URIs</label>
+                                        <input type="text" class="mock-input" value="https://myapp.company.vn/login/oauth2/code/*" />
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Settings (Cấu hình cơ bản)</h4>
+                                    <p>Nơi định nghĩa các thông số hoạt động chính của Client:</p>
+                                    <ul>
+                                        <li><strong>Client ID:</strong> Định danh duy nhất cho Client gửi lên khi request login.</li>
+                                        <li><strong>Client Authentication:</strong> Bật toggle này sẽ chuyển Client thành <em>Confidential</em> (yêu cầu Client Secret khi trao đổi Token). Tắt đi sẽ là <em>Public</em>.</li>
+                                        <li><strong>Standard Flow:</strong> Luồng đăng nhập tương tác chuẩn của OAuth2/OIDC.</li>
+                                        <li><strong>Valid Redirect URIs:</strong> Danh sách URL được phép redirect về sau khi đăng nhập. Đây là chốt chặn bảo mật quan trọng chống lại lỗi hổng Open Redirect.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Keys -->
+                        <div id="cl-tab-keys" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Algorithm</th>
+                                                    <th>Use</th>
+                                                    <th>Provider</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>RS256</td>
+                                                    <td>SIG (Ký)</td>
+                                                    <td>rsa-generated</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>AES256</td>
+                                                    <td>ENC (Mã hóa)</td>
+                                                    <td>aes-generated</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Generate New Keys</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Keys (Khóa mật mã)</h4>
+                                    <p>Quản lý các khóa mã hóa và chữ ký điện tử được cấu hình riêng cho Client này:</p>
+                                    <ul>
+                                        <li><strong>Signing Keys:</strong> Dùng để ký mã hóa JWT token giúp Client kiểm tra tính toàn vẹn của dữ liệu mà không cần gọi lại Keycloak.</li>
+                                        <li><strong>Import/Generate:</strong> Admin có thể tự generate cặp khóa mới hoặc import chứng chỉ công khai (public certificate) của chính Client nếu Client sử dụng phương thức đăng nhập bằng Signed JWT thay vì Client Secret.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Credentials -->
+                        <div id="cl-tab-credentials" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Client Authenticator</label>
+                                        <input type="text" class="mock-input" value="Client Id and Secret" disabled />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Client Secret</label>
+                                        <div style="display:flex; gap: 8px;">
+                                            <input type="password" class="mock-input" value="••••••••••••••••••••••••••••••••••••••••" disabled />
+                                            <button class="mock-btn secondary">Copy</button>
+                                        </div>
+                                    </div>
+                                    <button class="mock-btn danger">Regenerate Secret</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Credentials (Chứng thư bảo mật)</h4>
+                                    <p>Chỉ hiển thị khi bật <strong>Client Authentication</strong> ở Tab Settings:</p>
+                                    <ul>
+                                        <li><strong>Client Secret:</strong> Đóng vai trò như "mật khẩu" của ứng dụng Backend để định danh với Keycloak khi gửi request trao đổi token hoặc refresh token qua kênh an toàn.</li>
+                                        <li><strong>Regenerate Secret:</strong> Tạo mới Client Secret ngay lập tức nếu nghi ngờ bị lộ. Lưu ý: Cần cập nhật lại secret mới vào file cấu hình của ứng dụng Client để tránh bị gián đoạn truy cập.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Client Scopes -->
+                        <div id="cl-tab-scopes" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Scope Name</th>
+                                                    <th>Type</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>email</td>
+                                                    <td><span class="mock-badge badge-success">Default</span></td>
+                                                    <td><button class="mock-btn secondary" style="padding: 2px 6px;">Remove</button></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>profile</td>
+                                                    <td><span class="mock-badge badge-success">Default</span></td>
+                                                    <td><button class="mock-btn secondary" style="padding: 2px 6px;">Remove</button></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>offline_access</td>
+                                                    <td><span class="mock-badge badge-info">Optional</span></td>
+                                                    <td><button class="mock-btn secondary" style="padding: 2px 6px;">Remove</button></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Add Client Scope</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Client Scopes (Gán phạm vi)</h4>
+                                    <p>Quản lý các Client Scope được gán vào Client này:</p>
+                                    <ul>
+                                        <li><strong>Default:</strong> Tự động đính kèm vào Token và kiểm tra quyền mà không cần Client gửi tham số scope trong request đăng nhập.</li>
+                                        <li><strong>Optional:</strong> Chỉ được áp dụng khi Client yêu cầu một cách tường minh trong request đăng nhập (ví dụ: gửi `scope=offline_access` để lấy Refresh Token dài hạn).</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Roles -->
+                        <div id="cl-tab-roles" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Role Name</th>
+                                                    <th>Description</th>
+                                                    <th>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>editor</td>
+                                                    <td>Quyền chỉnh sửa nội dung bài viết</td>
+                                                    <td><button class="mock-btn danger" style="padding: 2px 6px;">Delete</button></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>viewer</td>
+                                                    <td>Chỉ được xem thông tin hệ thống</td>
+                                                    <td><button class="mock-btn danger" style="padding: 2px 6px;">Delete</button></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Create Client Role</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Roles (Vai trò cấp Client)</h4>
+                                    <p>Quản lý các vai trò (Roles) cục bộ chỉ có giá trị sử dụng bên trong Client hiện tại:</p>
+                                    <ul>
+                                        <li><strong>Khác biệt với Realm Role:</strong> Client Role giúp cô lập quyền phân chia nội bộ của một ứng dụng cụ thể mà không làm loãng danh sách role của toàn bộ hệ thống (Realm).</li>
+                                        <li><strong>Mappers tự động:</strong> Các Client Roles này sẽ được ghi vào payload JWT token tại claim `resource_access.[client-id].roles`.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Mappers -->
+                        <div id="cl-tab-mappers" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Name</th>
+                                                    <th>Category</th>
+                                                    <th>Type</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>user-phone-mapper</td>
+                                                    <td>Token mapper</td>
+                                                    <td>User Attribute</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>group-membership-mapper</td>
+                                                    <td>Token mapper</td>
+                                                    <td>Group Membership</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Add mapper &raquo;</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Mappers (Ánh xạ Claims)</h4>
+                                    <p>Tùy biến cách thức các thông tin của User được nhúng vào Token:</p>
+                                    <ul>
+                                        <li><strong>Protocol Mappers:</strong> Cho phép lấy bất kỳ dữ liệu nào của User (ví dụ: thuộc tính số điện thoại, danh sách nhóm, hay email) và map nó thành một claim tùy chỉnh trong ID Token hoặc Access Token.</li>
+                                        <li><strong>Mục đích:</strong> Giúp ứng dụng Frontend và Backend giải mã token là có ngay dữ liệu tùy chỉnh mà không cần gọi API tra cứu thêm.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 43.2 Client scopes -->
+    <div id="client-scopes-sub" style="margin-top: 40px;">
+        <h3>43.2. Client Scopes</h3>
+        <p>
+            <strong>Client Scopes</strong> là các cấu hình gom nhóm quyền hạn hoặc các ánh xạ thuộc tính (claims) có thể tái sử dụng trên nhiều Client. Ví dụ, thay vì phải cấu hình các mappers (profile, email) riêng lẻ cho 50 client khác nhau, bạn có thể tạo một Client Scope tên là <code>custom-profile</code> và gán scope này cho cả 50 client đó.
+        </p>
+
+        <!-- UI Mockup for Client Scopes -->
+        <div class="kc-ui-mockup">
+            <div class="kc-mock-header">
+                <div class="kc-mock-logo">Keycloak Admin Console</div>
+                <div>Realm: <span style="font-weight: 600; color: #3b82f6;">myrealm</span></div>
+            </div>
+            <div class="kc-mock-wrapper">
+                <div class="kc-mock-sidebar">
+                    <div class="kc-mock-sidebar-title">Manage</div>
+                    <div class="kc-mock-sidebar-item">Clients</div>
+                    <div class="kc-mock-sidebar-item active">Client scopes</div>
+                    <div class="kc-mock-sidebar-item">Realm roles</div>
+                    <div class="kc-mock-sidebar-item">Users</div>
+                    <div class="kc-mock-sidebar-item">Groups</div>
+                    <div class="kc-mock-sidebar-item">Sessions</div>
+                    <div class="kc-mock-sidebar-item">Events</div>
+                    <div class="kc-mock-sidebar-title">Configure</div>
+                    <div class="kc-mock-sidebar-item">Realm settings</div>
+                    <div class="kc-mock-sidebar-item">Authentication</div>
+                    <div class="kc-mock-sidebar-item">Identity providers</div>
+                    <div class="kc-mock-sidebar-item">User federation</div>
+                </div>
+                <div class="kc-mock-content">
+                    <div class="kc-mock-title-area">
+                        <h3>Client Scopes &raquo; custom-scope</h3>
+                    </div>
+                    <div class="kc-mock-tabs-nav">
+                        <button class="mock-tab-btn active" onclick="switchMockTab(this, 'cs-tab-settings')">Settings</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'cs-tab-mappers')">Mappers</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'cs-tab-scope')">Scope</button>
+                    </div>
+                    <div class="mock-tab-content">
+                        <!-- Tab Settings -->
+                        <div id="cs-tab-settings" class="mock-tab-pane active">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Name</label>
+                                        <input type="text" class="mock-input" value="custom-scope" />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Description</label>
+                                        <input type="text" class="mock-input" value="Scope chứa thông tin phòng ban người dùng" />
+                                    </div>
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">Display on consent screen</span>
+                                            <div class="mock-desc-text">Hiển thị yêu cầu người dùng xác nhận chia sẻ khi đăng nhập</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Settings (Cấu hình chung)</h4>
+                                    <p>Định nghĩa thông tin cơ bản cho scope:</p>
+                                    <ul>
+                                        <li><strong>Name:</strong> Tên của scope, dùng trong tham số URL (ví dụ: `scope=openid custom-scope`).</li>
+                                        <li><strong>Display on consent screen:</strong> Nếu bật, người dùng sẽ thấy thông báo đồng ý chia sẻ thông tin mà scope này nắm giữ ở lần đăng nhập đầu tiên.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Mappers -->
+                        <div id="cs-tab-mappers" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Name</th>
+                                                    <th>Mapper Type</th>
+                                                    <th>Token Claim Name</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>dept-mapper</td>
+                                                    <td>User Attribute</td>
+                                                    <td>department</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Add Mapper</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Mappers (Cơ chế ánh xạ)</h4>
+                                    <p>Cấu hình các Protocol Mapper thuộc về scope này:</p>
+                                    <ul>
+                                        <li>Khi một Client yêu cầu scope này thành công, các mappers được định nghĩa ở đây sẽ được kích hoạt để tiêm thông tin tương ứng vào JWT Token.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Scope -->
+                        <div id="cs-tab-scope" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">Full Scope Allowed</span>
+                                            <div class="mock-desc-text">Cho phép tự động thừa kế mọi vai trò cấp Realm</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Scope (Quy định phạm vi role)</h4>
+                                    <p>Giới hạn vai trò (Role Scope Mappings):</p>
+                                    <ul>
+                                        <li>Giúp giới hạn các Role cấp Realm/Client có thể được đưa vào Token khi Client yêu cầu scope này. Điều này rất hữu ích cho các Public Client nhằm tránh lộ lọt các vai trò quản trị nhạy cảm vào token.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 43.3 Realm roles -->
+    <div id="realm-roles-sub" style="margin-top: 40px;">
+        <h3>43.3. Realm Roles</h3>
+        <p>
+            <strong>Realm Roles</strong> là các vai trò cấp hệ thống và có hiệu lực trên toàn bộ Realm hiện tại. Bất kỳ người dùng hoặc client nào trong Realm đều có thể được gán các vai trò này để thực hiện cơ chế kiểm soát quyền truy cập dựa trên vai trò (RBAC - Role-Based Access Control).
+        </p>
+
+        <!-- UI Mockup for Realm Roles -->
+        <div class="kc-ui-mockup">
+            <div class="kc-mock-header">
+                <div class="kc-mock-logo">Keycloak Admin Console</div>
+                <div>Realm: <span style="font-weight: 600; color: #3b82f6;">myrealm</span></div>
+            </div>
+            <div class="kc-mock-wrapper">
+                <div class="kc-mock-sidebar">
+                    <div class="kc-mock-sidebar-title">Manage</div>
+                    <div class="kc-mock-sidebar-item">Clients</div>
+                    <div class="kc-mock-sidebar-item">Client scopes</div>
+                    <div class="kc-mock-sidebar-item active">Realm roles</div>
+                    <div class="kc-mock-sidebar-item">Users</div>
+                    <div class="kc-mock-sidebar-item">Groups</div>
+                    <div class="kc-mock-sidebar-item">Sessions</div>
+                    <div class="kc-mock-sidebar-item">Events</div>
+                    <div class="kc-mock-sidebar-title">Configure</div>
+                    <div class="kc-mock-sidebar-item">Realm settings</div>
+                    <div class="kc-mock-sidebar-item">Authentication</div>
+                    <div class="kc-mock-sidebar-item">Identity providers</div>
+                    <div class="kc-mock-sidebar-item">User federation</div>
+                </div>
+                <div class="kc-mock-content">
+                    <div class="kc-mock-title-area">
+                        <h3>Realm Roles &raquo; super-admin</h3>
+                    </div>
+                    <div class="kc-mock-tabs-nav">
+                        <button class="mock-tab-btn active" onclick="switchMockTab(this, 'rr-tab-details')">Details</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'rr-tab-attributes')">Attributes</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'rr-tab-associated')">Associated Roles</button>
+                    </div>
+                    <div class="mock-tab-content">
+                        <!-- Tab Details -->
+                        <div id="rr-tab-details" class="mock-tab-pane active">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Role Name</label>
+                                        <input type="text" class="mock-input" value="super-admin" disabled />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Description</label>
+                                        <input type="text" class="mock-input" value="Vai trò quản trị cao cấp nhất hệ thống" />
+                                    </div>
+                                    <button class="mock-btn">Save</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Details (Chi tiết vai trò)</h4>
+                                    <p>Cấu hình thông tin cơ bản cho vai trò:</p>
+                                    <ul>
+                                        <li><strong>Role Name:</strong> Tên định danh của vai trò, sẽ được mã hóa vào mảng roles của claim `realm_access.roles` trong JWT.</li>
+                                        <li><strong>Description:</strong> Ghi chú về mục đích sử dụng của role này để hỗ trợ các admin khác.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Attributes -->
+                        <div id="rr-tab-attributes" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Key</th>
+                                                    <th>Value</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>security-level</td>
+                                                    <td>high</td>
+                                                    <td><button class="mock-btn secondary" style="padding: 2px 6px;">Delete</button></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Add Attribute</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Attributes (Thuộc tính đính kèm)</h4>
+                                    <p>Lưu trữ siêu dữ liệu (Metadata) cho vai trò dưới dạng các cặp khóa-giá trị (Key-Value):</p>
+                                    <ul>
+                                        <li>Giúp ứng dụng ngoài có thể đọc thêm thông tin phụ trợ về vai trò này mà không cần thay đổi logic code của ứng dụng.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Associated Roles -->
+                        <div id="rr-tab-associated" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">Composite Role</span>
+                                            <div class="mock-desc-text">Cho phép lồng ghép và nhóm các vai trò khác</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Role Name</th>
+                                                    <th>Source</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>user-manager</td>
+                                                    <td>Realm-level</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>audit-viewer</td>
+                                                    <td>Realm-level</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Associated Roles (Vai trò phức hợp)</h4>
+                                    <p>Khái niệm <strong>Composite Role</strong> (Vai trò tổng hợp):</p>
+                                    <ul>
+                                        <li>Khi bạn bật Composite Role cho vai trò A và gắn vai trò B, C vào đó. Bất kỳ User nào được gán vai trò A sẽ tự động được thừa hưởng toàn bộ các quyền và vai trò của B và C mà không cần gán thủ công từng vai trò một.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 43.4 Users -->
+    <div id="users-sub" style="margin-top: 40px;">
+        <h3>43.4. Users</h3>
+        <p>
+            <strong>Users</strong> là các thực thể đại diện cho người dùng đăng nhập hệ thống trong Realm. Đây là nơi quản lý trực tiếp danh tính, đặt lại mật khẩu, kích hoạt bảo mật đa nhân tố (MFA), gán nhóm và theo dõi các phiên làm việc đang chạy của từng người.
+        </p>
+
+        <!-- UI Mockup for Users -->
+        <div class="kc-ui-mockup">
+            <div class="kc-mock-header">
+                <div class="kc-mock-logo">Keycloak Admin Console</div>
+                <div>Realm: <span style="font-weight: 600; color: #3b82f6;">myrealm</span></div>
+            </div>
+            <div class="kc-mock-wrapper">
+                <div class="kc-mock-sidebar">
+                    <div class="kc-mock-sidebar-title">Manage</div>
+                    <div class="kc-mock-sidebar-item">Clients</div>
+                    <div class="kc-mock-sidebar-item">Client scopes</div>
+                    <div class="kc-mock-sidebar-item">Realm roles</div>
+                    <div class="kc-mock-sidebar-item active">Users</div>
+                    <div class="kc-mock-sidebar-item">Groups</div>
+                    <div class="kc-mock-sidebar-item">Sessions</div>
+                    <div class="kc-mock-sidebar-item">Events</div>
+                    <div class="kc-mock-sidebar-title">Configure</div>
+                    <div class="kc-mock-sidebar-item">Realm settings</div>
+                    <div class="kc-mock-sidebar-item">Authentication</div>
+                    <div class="kc-mock-sidebar-item">Identity providers</div>
+                    <div class="kc-mock-sidebar-item">User federation</div>
+                </div>
+                <div class="kc-mock-content">
+                    <div class="kc-mock-title-area">
+                        <h3>Users &raquo; hienbx</h3>
+                    </div>
+                    <div class="kc-mock-tabs-nav">
+                        <button class="mock-tab-btn active" onclick="switchMockTab(this, 'us-tab-details')">Details</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'us-tab-attributes')">Attributes</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'us-tab-credentials')">Credentials</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'us-tab-roles')">Role Mapping</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'us-tab-groups')">Groups</button>
+                    </div>
+                    <div class="mock-tab-content">
+                        <!-- Tab Details -->
+                        <div id="us-tab-details" class="mock-tab-pane active">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Username</label>
+                                        <input type="text" class="mock-input" value="hienbx" disabled />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Email</label>
+                                        <input type="email" class="mock-input" value="hienbx@company.vn" />
+                                    </div>
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">User Enabled</span>
+                                            <div class="mock-desc-text">Kích hoạt/Vô hiệu hóa tài khoản người dùng đăng nhập</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Required User Actions</label>
+                                        <input type="text" class="mock-input" value="Configure OTP, Update Password" placeholder="Chọn hành động bắt buộc" />
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Details (Thông tin cá nhân)</h4>
+                                    <p>Quản lý hồ sơ và trạng thái tài khoản:</p>
+                                    <ul>
+                                        <li><strong>User Enabled:</strong> Khóa tài khoản ngay lập tức khi chuyển toggle về trạng thái OFF.</li>
+                                        <li><strong>Required User Actions:</strong> Ép buộc người dùng thực hiện một số hành động bảo mật bắt buộc ở lần đăng nhập tới (ví dụ: đổi mật khẩu mặc định, cài ứng dụng OTP).</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Attributes -->
+                        <div id="us-tab-attributes" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Key</th>
+                                                    <th>Value</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>phone</td>
+                                                    <td>0987654321</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>company-id</td>
+                                                    <td>EMP-999</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Add Attribute</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Attributes (Thuộc tính mở rộng)</h4>
+                                    <p>Cho phép thêm các thuộc tính nghiệp vụ riêng cho người dùng:</p>
+                                    <ul>
+                                        <li>Ví dụ: mã nhân viên, số điện thoại, phòng ban... Các giá trị này sau đó sẽ được ánh xạ vào token nhờ tab <strong>Mappers</strong> của Client hoặc Client Scopes.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Credentials -->
+                        <div id="us-tab-credentials" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px;">
+                                        <div class="mock-label" style="margin-bottom: 8px;">Reset Password</div>
+                                        <div class="mock-form-group" style="margin-bottom: 8px;">
+                                            <label class="mock-label">New Password</label>
+                                            <input type="password" class="mock-input" value="••••••••" />
+                                        </div>
+                                        <div class="mock-form-group row" style="margin-bottom: 8px;">
+                                            <span class="mock-label">Temporary Password</span>
+                                            <label class="mock-toggle-switch">
+                                                <input type="checkbox" checked />
+                                                <span class="mock-slider"></span>
+                                            </label>
+                                        </div>
+                                        <button class="mock-btn">Reset Password</button>
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Credentials (Đặt lại mật khẩu)</h4>
+                                    <p>Quản lý các yếu tố xác thực:</p>
+                                    <ul>
+                                        <li><strong>Temporary Password (Mật khẩu tạm thời):</strong> Nếu bật ON, người dùng bắt buộc phải đặt lại mật khẩu mới khi đăng nhập bằng mật khẩu này.</li>
+                                        <li><strong>Credential Reset:</strong> Cho phép xóa và cài lại OTP token của người dùng nếu họ bị mất điện thoại chứa ứng dụng Google Authenticator.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Role Mapping -->
+                        <div id="us-tab-roles" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-label">Assigned Roles</div>
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Role</th>
+                                                    <th>Inherited From</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>super-admin</td>
+                                                    <td>Direct Assignment</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>user-manager</td>
+                                                    <td>Group: IT Department</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Assign Role</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Role Mapping (Phân quyền chi tiết)</h4>
+                                    <p>Nơi gán các vai trò (Roles) cho User:</p>
+                                    <ul>
+                                        <li>Bảng hiển thị các role được gán trực tiếp (Direct) và các role được thừa hưởng gián tiếp từ Group (Group Membership) giúp quản trị viên dễ dàng tra cứu lý do tại sao User lại có quyền đó.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Groups -->
+                        <div id="us-tab-groups" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Group Name</th>
+                                                    <th>Path</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>IT Department</td>
+                                                    <td>/Company/IT</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Join Group</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Groups (Quản lý Nhóm)</h4>
+                                    <p>Quản lý các nhóm mà User là thành viên:</p>
+                                    <ul>
+                                        <li>User sẽ tự động thừa kế mọi thuộc tính và phân quyền (Roles) đã được thiết lập trước đó cho các nhóm này.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 43.5 Groups -->
+    <div id="groups-sub" style="margin-top: 40px;">
+        <h3>43.5. Groups</h3>
+        <p>
+            <strong>Groups</strong> giúp gom nhóm người dùng theo phòng ban, tổ chức, vị trí địa lý theo mô hình phân cấp dạng cây (Tree). Groups giúp giảm tải công việc cho Admin nhờ cơ chế phân quyền theo nhóm: Khi một nhân sự mới chuyển sang phòng ban khác, Admin chỉ cần cập nhật Group của họ, mọi quyền hạn cũ sẽ tự động bị tước bỏ và thay thế bằng các quyền hạn của phòng ban mới.
+        </p>
+
+        <!-- UI Mockup for Groups -->
+        <div class="kc-ui-mockup">
+            <div class="kc-mock-header">
+                <div class="kc-mock-logo">Keycloak Admin Console</div>
+                <div>Realm: <span style="font-weight: 600; color: #3b82f6;">myrealm</span></div>
+            </div>
+            <div class="kc-mock-wrapper">
+                <div class="kc-mock-sidebar">
+                    <div class="kc-mock-sidebar-title">Manage</div>
+                    <div class="kc-mock-sidebar-item">Clients</div>
+                    <div class="kc-mock-sidebar-item">Client scopes</div>
+                    <div class="kc-mock-sidebar-item">Realm roles</div>
+                    <div class="kc-mock-sidebar-item">Users</div>
+                    <div class="kc-mock-sidebar-item active">Groups</div>
+                    <div class="kc-mock-sidebar-item">Sessions</div>
+                    <div class="kc-mock-sidebar-item">Events</div>
+                    <div class="kc-mock-sidebar-title">Configure</div>
+                    <div class="kc-mock-sidebar-item">Realm settings</div>
+                    <div class="kc-mock-sidebar-item">Authentication</div>
+                    <div class="kc-mock-sidebar-item">Identity providers</div>
+                    <div class="kc-mock-sidebar-item">User federation</div>
+                </div>
+                <div class="kc-mock-content">
+                    <div class="kc-mock-title-area">
+                        <h3>Groups &raquo; IT Department</h3>
+                    </div>
+                    <div class="kc-mock-tabs-nav">
+                        <button class="mock-tab-btn active" onclick="switchMockTab(this, 'gr-tab-details')">Details</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'gr-tab-attributes')">Attributes</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'gr-tab-roles')">Role Mapping</button>
+                    </div>
+                    <div class="mock-tab-content">
+                        <!-- Tab Details -->
+                        <div id="gr-tab-details" class="mock-tab-pane active">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Group Name</label>
+                                        <input type="text" class="mock-input" value="IT Department" />
+                                    </div>
+                                    <button class="mock-btn">Save</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Details (Cấu hình nhóm)</h4>
+                                    <p>Quản lý cấu trúc cây của nhóm:</p>
+                                    <ul>
+                                        <li>Bạn có thể tạo nhóm con (Subgroup) trực tiếp dưới nhóm này để phân nhánh chi tiết (ví dụ: nhóm `/IT Department/Development`).</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Attributes -->
+                        <div id="gr-tab-attributes" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Key</th>
+                                                    <th>Value</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>cost-center</td>
+                                                    <td>CC-8822</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Add Attribute</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Attributes (Thuộc tính nhóm)</h4>
+                                    <p>Định nghĩa thuộc tính dùng chung của nhóm:</p>
+                                    <ul>
+                                        <li>Tất cả thành viên khi tham gia vào Group này sẽ tự động kế thừa thuộc tính cấu hình ở đây (ví dụ: mã phòng ban, trung tâm chi phí).</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Role Mapping -->
+                        <div id="gr-tab-roles" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-label">Assigned Realm Roles</div>
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Role Name</th>
+                                                    <th>Source</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>developer</td>
+                                                    <td>Realm-level</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Assign Role</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Role Mapping (Phân quyền nhóm)</h4>
+                                    <p>Gán phân quyền trực tiếp cho toàn bộ thành viên của Group:</p>
+                                    <ul>
+                                        <li>Mọi User thuộc Group này sẽ có đầy đủ các vai trò được gán tại đây, giúp bạn dễ dàng quản lý phân quyền theo phòng ban một cách tự động và nhất quán.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 43.6 Sessions -->
+    <div id="sessions-sub" style="margin-top: 40px;">
+        <h3>43.6. Sessions</h3>
+        <p>
+            <strong>Sessions</strong> là công cụ giám sát và thu hồi phiên làm việc của người dùng theo thời gian thực (Real-time). Khi xảy ra sự cố bảo mật hoặc khi một tài khoản quản trị bị nghi ngờ xâm nhập, Admin có thể tra cứu nhanh địa chỉ IP đăng nhập của họ và thực hiện lệnh ngắt phiên đăng nhập khẩn cấp.
+        </p>
+
+        <!-- UI Mockup for Sessions -->
+        <div class="kc-ui-mockup">
+            <div class="kc-mock-header">
+                <div class="kc-mock-logo">Keycloak Admin Console</div>
+                <div>Realm: <span style="font-weight: 600; color: #3b82f6;">myrealm</span></div>
+            </div>
+            <div class="kc-mock-wrapper">
+                <div class="kc-mock-sidebar">
+                    <div class="kc-mock-sidebar-title">Manage</div>
+                    <div class="kc-mock-sidebar-item">Clients</div>
+                    <div class="kc-mock-sidebar-item">Client scopes</div>
+                    <div class="kc-mock-sidebar-item">Realm roles</div>
+                    <div class="kc-mock-sidebar-item">Users</div>
+                    <div class="kc-mock-sidebar-item">Groups</div>
+                    <div class="kc-mock-sidebar-item active">Sessions</div>
+                    <div class="kc-mock-sidebar-item">Events</div>
+                    <div class="kc-mock-sidebar-title">Configure</div>
+                    <div class="kc-mock-sidebar-item">Realm settings</div>
+                    <div class="kc-mock-sidebar-item">Authentication</div>
+                    <div class="kc-mock-sidebar-item">Identity providers</div>
+                    <div class="kc-mock-sidebar-item">User federation</div>
+                </div>
+                <div class="kc-mock-content">
+                    <div class="kc-mock-title-area">
+                        <h3>Sessions &raquo; Active Sessions</h3>
+                    </div>
+                    <div class="kc-mock-tabs-nav">
+                        <button class="mock-tab-btn active" onclick="switchMockTab(this, 'se-tab-list')">Realm Sessions</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'se-tab-revocation')">Revocation</button>
+                    </div>
+                    <div class="mock-tab-content">
+                        <!-- Tab Realm Sessions -->
+                        <div id="se-tab-list" class="mock-tab-pane active">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>User</th>
+                                                    <th>IP Address</th>
+                                                    <th>Start Time</th>
+                                                    <th>Clients Active</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>hienbx</td>
+                                                    <td>192.168.1.15</td>
+                                                    <td>2026-06-05 08:30:11</td>
+                                                    <td>my-app-client, account</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn danger">Logout All Sessions</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Realm Sessions (Giám sát phiên)</h4>
+                                    <p>Danh sách các phiên làm việc đang hoạt động:</p>
+                                    <ul>
+                                        <li><strong>Realm Sessions:</strong> Hiển thị IP, tên user và danh sách các ứng dụng (Clients) mà User đã đăng nhập Single Sign On (SSO).</li>
+                                        <li><strong>Logout All:</strong> Ngắt toàn bộ các session hiện tại trong Realm, buộc tất cả người dùng phải thực hiện đăng nhập lại từ đầu.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Revocation -->
+                        <div id="se-tab-revocation" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Not Before</label>
+                                        <input type="text" class="mock-input" value="2026-06-05 00:00:00" />
+                                    </div>
+                                    <button class="mock-btn danger">Set To Now</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Revocation (Thu hồi khẩn cấp)</h4>
+                                    <p>Cơ chế thu hồi Token khẩn cấp:</p>
+                                    <ul>
+                                        <li><strong>Not Before:</strong> Khi nhấn nút "Set To Now", tất cả token được cấp trước thời điểm hiện tại sẽ lập tức bị coi là không hợp lệ (Invalid). Mọi API Gateway hoặc Resource Server kiểm tra token sẽ chặn truy cập của các token cũ này.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 43.7 Events -->
+    <div id="events-sub" style="margin-top: 40px;">
+        <h3>43.7. Events</h3>
+        <p>
+            <strong>Events</strong> ghi nhận lịch sử các hành động xảy ra trong hệ thống. Đây là cơ sở cốt lõi phục vụ công tác kiểm tra an toàn thông tin (Audit Log) và điều tra sự cố đăng nhập của người dùng.
+        </p>
+
+        <!-- UI Mockup for Events -->
+        <div class="kc-ui-mockup">
+            <div class="kc-mock-header">
+                <div class="kc-mock-logo">Keycloak Admin Console</div>
+                <div>Realm: <span style="font-weight: 600; color: #3b82f6;">myrealm</span></div>
+            </div>
+            <div class="kc-mock-wrapper">
+                <div class="kc-mock-sidebar">
+                    <div class="kc-mock-sidebar-title">Manage</div>
+                    <div class="kc-mock-sidebar-item">Clients</div>
+                    <div class="kc-mock-sidebar-item">Client scopes</div>
+                    <div class="kc-mock-sidebar-item">Realm roles</div>
+                    <div class="kc-mock-sidebar-item">Users</div>
+                    <div class="kc-mock-sidebar-item">Groups</div>
+                    <div class="kc-mock-sidebar-item">Sessions</div>
+                    <div class="kc-mock-sidebar-item active">Events</div>
+                    <div class="kc-mock-sidebar-title">Configure</div>
+                    <div class="kc-mock-sidebar-item">Realm settings</div>
+                    <div class="kc-mock-sidebar-item">Authentication</div>
+                    <div class="kc-mock-sidebar-item">Identity providers</div>
+                    <div class="kc-mock-sidebar-item">User federation</div>
+                </div>
+                <div class="kc-mock-content">
+                    <div class="kc-mock-title-area">
+                        <h3>Events &raquo; User Events</h3>
+                    </div>
+                    <div class="kc-mock-tabs-nav">
+                        <button class="mock-tab-btn active" onclick="switchMockTab(this, 'ev-tab-user')">User Events</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'ev-tab-admin')">Admin Events</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'ev-tab-config')">Config</button>
+                    </div>
+                    <div class="mock-tab-content">
+                        <!-- Tab User Events -->
+                        <div id="ev-tab-user" class="mock-tab-pane active">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Time</th>
+                                                    <th>Event Type</th>
+                                                    <th>Client</th>
+                                                    <th>User</th>
+                                                    <th>IP Address</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>08:35:10</td>
+                                                    <td><span class="mock-badge badge-success">LOGIN</span></td>
+                                                    <td>my-app-client</td>
+                                                    <td>hienbx</td>
+                                                    <td>192.168.1.15</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>08:34:02</td>
+                                                    <td><span class="mock-badge badge-danger">LOGIN_ERROR</span></td>
+                                                    <td>my-app-client</td>
+                                                    <td>admin</td>
+                                                    <td>192.168.1.55</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab User Events (Sự kiện người dùng)</h4>
+                                    <p>Ghi lại mọi hoạt động tương tác đăng nhập:</p>
+                                    <ul>
+                                        <li><strong>LOGIN:</strong> Đăng nhập thành công.</li>
+                                        <li><strong>LOGIN_ERROR:</strong> Đăng nhập thất bại (sai mật khẩu, sai mã OTP), giúp phát hiện các cuộc tấn công dò mật khẩu (Brute force).</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Admin Events -->
+                        <div id="ev-tab-admin" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Time</th>
+                                                    <th>Operation</th>
+                                                    <th>Resource Type</th>
+                                                    <th>Path</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>09:00:22</td>
+                                                    <td><span class="mock-badge badge-info">CREATE</span></td>
+                                                    <td>CLIENT</td>
+                                                    <td>clients/my-app-client</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Admin Events (Sự kiện quản trị)</h4>
+                                    <p>Ghi lại các thay đổi cấu hình do quản trị viên thực hiện:</p>
+                                    <ul>
+                                        <li><strong>CREATE / UPDATE / DELETE:</strong> Lưu trữ vết cấu hình (ai đã thay đổi cái gì, sửa đổi thiết lập nào của client/realm). Đây là phần kiểm toán vô cùng quan trọng đối với các doanh nghiệp lớn.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Config -->
+                        <div id="ev-tab-config" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">Save Events</span>
+                                            <div class="mock-desc-text">Cho phép ghi nhận các sự kiện đăng nhập vào Database</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Expiration (seconds)</label>
+                                        <input type="number" class="mock-input" value="2592000" />
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Config (Cấu hình ghi log)</h4>
+                                    <p>Cài đặt cơ chế lưu trữ log:</p>
+                                    <ul>
+                                        <li><strong>Save Events:</strong> Phải bật để Keycloak bắt đầu ghi lịch sử.</li>
+                                        <li><strong>Expiration:</strong> Thời gian hết hạn của log. Mặc định nên lưu trữ tối thiểu 30 ngày (2,592,000 giây) để phục vụ kiểm toán an toàn thông tin khi xảy ra sự cố.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===================================================== -->
+<!-- CHƯƠNG 44: CHI TIẾT DANH MỤC CONFIGURE (ADMIN CONSOLE) -->
+<!-- ===================================================== -->
+<section id="configure-console">
+    <h2>44. CHI TIẾT DANH MỤC CONFIGURE (ADMIN CONSOLE)</h2>
+    <p>
+        Danh mục <strong>Configure</strong> chứa các thiết lập cấp kiến trúc hệ thống và luồng bảo mật sâu bao gồm cài đặt cấu hình toàn Realm, thiết lập các bộ chính sách mật khẩu, quy trình đăng nhập (Authentication), và tích hợp nguồn định danh bên thứ ba (Identity Providers, User Federation).
+    </p>
+
+    <!-- 44.1 Realm Settings -->
+    <div id="realm-settings-sub" style="margin-top: 30px;">
+        <h3>44.1. Realm Settings</h3>
+        <p>
+            <strong>Realm Settings</strong> quản lý các cấu hình tổng thể của Realm hiện tại như tên hiển thị, các tính năng của trang đăng nhập mặc định (như cho phép tự đăng ký tài khoản, phục hồi mật khẩu), SMTP server gửi mail hệ thống, thời hạn token và cấu hình các cơ chế phòng vệ chống tấn công DDoS/Clickjacking.
+        </p>
+
+        <!-- UI Mockup for Realm Settings -->
+        <div class="kc-ui-mockup">
+            <div class="kc-mock-header">
+                <div class="kc-mock-logo">Keycloak Admin Console</div>
+                <div>Realm: <span style="font-weight: 600; color: #3b82f6;">myrealm</span></div>
+            </div>
+            <div class="kc-mock-wrapper">
+                <div class="kc-mock-sidebar">
+                    <div class="kc-mock-sidebar-title">Manage</div>
+                    <div class="kc-mock-sidebar-item">Clients</div>
+                    <div class="kc-mock-sidebar-item">Client scopes</div>
+                    <div class="kc-mock-sidebar-item">Realm roles</div>
+                    <div class="kc-mock-sidebar-item">Users</div>
+                    <div class="kc-mock-sidebar-item">Groups</div>
+                    <div class="kc-mock-sidebar-item">Sessions</div>
+                    <div class="kc-mock-sidebar-item">Events</div>
+                    <div class="kc-mock-sidebar-title">Configure</div>
+                    <div class="kc-mock-sidebar-item active">Realm settings</div>
+                    <div class="kc-mock-sidebar-item">Authentication</div>
+                    <div class="kc-mock-sidebar-item">Identity providers</div>
+                    <div class="kc-mock-sidebar-item">User federation</div>
+                </div>
+                <div class="kc-mock-content">
+                    <div class="kc-mock-title-area">
+                        <h3>Realm Settings &raquo; Configuration</h3>
+                    </div>
+                    <div class="kc-mock-tabs-nav">
+                        <button class="mock-tab-btn active" onclick="switchMockTab(this, 'rs-tab-general')">General</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'rs-tab-login')">Login</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'rs-tab-email')">Email</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'rs-tab-themes')">Themes</button>
+                    </div>
+                    <div class="mock-tab-content">
+                        <!-- Tab General -->
+                        <div id="rs-tab-general" class="mock-tab-pane active">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Realm ID</label>
+                                        <input type="text" class="mock-input" value="myrealm" disabled />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Display Name</label>
+                                        <input type="text" class="mock-input" value="My Company Single Sign-On" />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">SSL Mode</label>
+                                        <input type="text" class="mock-input" value="external requests" />
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab General (Cấu hình tổng quan)</h4>
+                                    <p>Thiết lập cơ bản cấp Realm:</p>
+                                    <ul>
+                                        <li><strong>Realm ID:</strong> Định danh dùng để truy cập endpoint của Realm (ví dụ: `/realms/myrealm`). Không thể thay đổi sau khi tạo.</li>
+                                        <li><strong>SSL Mode:</strong> Khuyến nghị dùng `external requests` (bắt buộc HTTPS đối với các kết nối từ bên ngoài) hoặc `all` trên môi trường Production.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Login -->
+                        <div id="rs-tab-login" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">User Registration</span>
+                                            <div class="mock-desc-text">Cho phép người dùng tự tạo tài khoản mới</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">Forgot Password</span>
+                                            <div class="mock-desc-text">Hiển thị link quên mật khẩu trên màn hình đăng nhập</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">Verify Email</span>
+                                            <div class="mock-desc-text">Bắt buộc người dùng xác minh email sau khi đăng ký</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Login (Tính năng đăng nhập)</h4>
+                                    <p>Quản lý hành vi của màn hình đăng nhập mặc định:</p>
+                                    <ul>
+                                        <li><strong>Forgot Password:</strong> Cần được bật kèm theo cấu hình SMTP Server hợp lệ để gửi link đặt lại mật khẩu tự động cho người dùng.</li>
+                                        <li><strong>Verify Email:</strong> Đảm bảo người dùng sở hữu email hợp lệ trước khi được phép truy cập vào các ứng dụng nhạy cảm.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Email -->
+                        <div id="rs-tab-email" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Host</label>
+                                        <input type="text" class="mock-input" value="smtp.gmail.com" />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Port</label>
+                                        <input type="number" class="mock-input" value="587" />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">From</label>
+                                        <input type="email" class="mock-input" value="no-reply@company.vn" />
+                                    </div>
+                                    <button class="mock-btn secondary">Test connection</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Email (Cấu hình gửi Mail)</h4>
+                                    <p>Thiết lập SMTP Server để phục vụ các chức năng:</p>
+                                    <ul>
+                                        <li>Gửi email xác thực tài khoản.</li>
+                                        <li>Gửi email khôi phục mật khẩu.</li>
+                                        <li>Gửi cảnh báo phát hiện đăng nhập lạ.</li>
+                                        <li>Lưu ý: Không dùng mật khẩu cá nhân thông thường của Gmail mà bắt buộc phải dùng App Password (Mật khẩu ứng dụng) hoặc hệ thống relay mail nội bộ.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Themes -->
+                        <div id="rs-tab-themes" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Login Theme</label>
+                                        <input type="text" class="mock-input" value="company-theme" />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Account Theme</label>
+                                        <input type="text" class="mock-input" value="keycloak" />
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Themes (Giao diện thương hiệu)</h4>
+                                    <p>Lựa chọn giao diện hiển thị cho các màn hình:</p>
+                                    <ul>
+                                        <li><strong>Login Theme:</strong> Giao diện đăng nhập, đăng ký và quên mật khẩu. Bạn có thể xây dựng Custom Theme để đính kèm Logo, màu sắc nhận diện của doanh nghiệp.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 44.2 Authentication -->
+    <div id="authentication-sub" style="margin-top: 40px;">
+        <h3>44.2. Authentication</h3>
+        <p>
+            <strong>Authentication</strong> định nghĩa các quy trình (Flows) để xác thực người dùng khi họ tiến hành đăng nhập, đăng ký, hoặc reset mật khẩu. Keycloak cung cấp một bộ công cụ cực kỳ mạnh mẽ dưới dạng sơ đồ logic giúp admin dễ dàng thiết lập luồng đăng nhập yêu cầu thêm bảo mật 2 lớp (OTP/MFA) một cách trực quan.
+        </p>
+
+        <!-- UI Mockup for Authentication -->
+        <div class="kc-ui-mockup">
+            <div class="kc-mock-header">
+                <div class="kc-mock-logo">Keycloak Admin Console</div>
+                <div>Realm: <span style="font-weight: 600; color: #3b82f6;">myrealm</span></div>
+            </div>
+            <div class="kc-mock-wrapper">
+                <div class="kc-mock-sidebar">
+                    <div class="kc-mock-sidebar-title">Manage</div>
+                    <div class="kc-mock-sidebar-item">Clients</div>
+                    <div class="kc-mock-sidebar-item">Client scopes</div>
+                    <div class="kc-mock-sidebar-item">Realm roles</div>
+                    <div class="kc-mock-sidebar-item">Users</div>
+                    <div class="kc-mock-sidebar-item">Groups</div>
+                    <div class="kc-mock-sidebar-item">Sessions</div>
+                    <div class="kc-mock-sidebar-item">Events</div>
+                    <div class="kc-mock-sidebar-title">Configure</div>
+                    <div class="kc-mock-sidebar-item">Realm settings</div>
+                    <div class="kc-mock-sidebar-item active">Authentication</div>
+                    <div class="kc-mock-sidebar-item">Identity providers</div>
+                    <div class="kc-mock-sidebar-item">User federation</div>
+                </div>
+                <div class="kc-mock-content">
+                    <div class="kc-mock-title-area">
+                        <h3>Authentication &raquo; Browser Flow</h3>
+                    </div>
+                    <div class="kc-mock-tabs-nav">
+                        <button class="mock-tab-btn active" onclick="switchMockTab(this, 'au-tab-flows')">Flows</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'au-tab-actions')">Required Actions</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'au-tab-policies')">Password Policies</button>
+                    </div>
+                    <div class="mock-tab-content">
+                        <!-- Tab Flows -->
+                        <div id="au-tab-flows" class="mock-tab-pane active">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Auth Stage / Step</th>
+                                                    <th>Requirement</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>1. Cookie (Kiểm tra session cũ)</td>
+                                                    <td><span class="mock-badge badge-warning">Alternative</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>2. Identity Provider Redirect</td>
+                                                    <td><span class="mock-badge badge-warning">Alternative</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>3. Form Login (Username/Password)</td>
+                                                    <td><span class="mock-badge badge-success">Required</span></td>
+                                                </tr>
+                                                <tr>
+                                                    <td>4. OTP (Mã xác minh 2 lớp)</td>
+                                                    <td><span class="mock-badge badge-success">Required</span></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Flows (Quy trình xác thực)</h4>
+                                    <p>Thiết lập luồng đăng nhập:</p>
+                                    <ul>
+                                        <li>Mỗi bước (Execution) trong Flow có thể được gán các mức độ bắt buộc khác nhau:</li>
+                                        <li><strong>Required:</strong> Bước bắt buộc phải thực hiện thành công.</li>
+                                        <li><strong>Alternative:</strong> Có thể chọn một trong các phương án được gán nhãn này (ví dụ: Đăng nhập bằng Google HOẶC Form mật khẩu thường).</li>
+                                        <li><strong>Disabled:</strong> Vô hiệu hóa bước này.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Required Actions -->
+                        <div id="au-tab-actions" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">Configure OTP</span>
+                                            <div class="mock-desc-text">Kích hoạt luồng đăng ký OTP khi đăng nhập lần đầu</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">Update Password</span>
+                                            <div class="mock-desc-text">Yêu cầu đổi mật khẩu mới định kỳ hoặc khi bắt buộc</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Required Actions (Hành động bắt buộc)</h4>
+                                    <p>Định nghĩa các nhiệm vụ bảo mật người dùng phải hoàn thành trước khi được chuyển hướng vào ứng dụng:</p>
+                                    <ul>
+                                        <li>Nếu bật `Configure OTP`, mọi tài khoản chưa thiết lập bảo mật 2 lớp sẽ lập tức bị chặn ở trang đăng nhập để quét mã QR Authenticator nhằm kích hoạt OTP.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Policies -->
+                        <div id="au-tab-policies" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Policy Type</th>
+                                                    <th>Configuration Value</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>Minimum Length (Độ dài tối thiểu)</td>
+                                                    <td>12 ký tự</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Special Characters (Ký tự đặc biệt)</td>
+                                                    <td>Tối thiểu 1</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Not Recently Used (Lịch sử trùng)</td>
+                                                    <td>3 lần mật khẩu gần nhất</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Add Policy</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Password Policies (Chính sách mật khẩu)</h4>
+                                    <p>Quy định các tiêu chuẩn kỹ thuật bắt buộc khi người dùng đặt mật khẩu mới nhằm chống tấn công Brute force hoặc đoán mật khẩu:</p>
+                                    <ul>
+                                        <li>Khuyến nghị cấu hình tối thiểu 12 ký tự, bắt buộc chứa chữ hoa, chữ thường, chữ số và ký tự đặc biệt.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 44.3 Identity providers -->
+    <div id="identity-providers-sub" style="margin-top: 40px;">
+        <h3>44.3. Identity Providers</h3>
+        <p>
+            <strong>Identity Providers (IdP)</strong> cho phép người dùng đăng nhập bằng các tài khoản định danh bên ngoài. Có hai nhóm chính: Social Login (Google, Facebook, GitHub, Apple) và Enterprise Identity Providers (liên kết với các hệ thống Keycloak khác, Azure AD, Okta qua giao thức chuẩn OpenID Connect hoặc SAML 2.0).
+        </p>
+
+        <!-- UI Mockup for Identity Providers -->
+        <div class="kc-ui-mockup">
+            <div class="kc-mock-header">
+                <div class="kc-mock-logo">Keycloak Admin Console</div>
+                <div>Realm: <span style="font-weight: 600; color: #3b82f6;">myrealm</span></div>
+            </div>
+            <div class="kc-mock-wrapper">
+                <div class="kc-mock-sidebar">
+                    <div class="kc-mock-sidebar-title">Manage</div>
+                    <div class="kc-mock-sidebar-item">Clients</div>
+                    <div class="kc-mock-sidebar-item">Client scopes</div>
+                    <div class="kc-mock-sidebar-item">Realm roles</div>
+                    <div class="kc-mock-sidebar-item">Users</div>
+                    <div class="kc-mock-sidebar-item">Groups</div>
+                    <div class="kc-mock-sidebar-item">Sessions</div>
+                    <div class="kc-mock-sidebar-item">Events</div>
+                    <div class="kc-mock-sidebar-title">Configure</div>
+                    <div class="kc-mock-sidebar-item">Realm settings</div>
+                    <div class="kc-mock-sidebar-item">Authentication</div>
+                    <div class="kc-mock-sidebar-item active">Identity providers</div>
+                    <div class="kc-mock-sidebar-item">User federation</div>
+                </div>
+                <div class="kc-mock-content">
+                    <div class="kc-mock-title-area">
+                        <h3>Identity Providers &raquo; Google Config</h3>
+                    </div>
+                    <div class="kc-mock-tabs-nav">
+                        <button class="mock-tab-btn active" onclick="switchMockTab(this, 'id-tab-general')">General Settings</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'id-tab-mappers')">Mappers</button>
+                    </div>
+                    <div class="mock-tab-content">
+                        <!-- Tab General Settings -->
+                        <div id="id-tab-general" class="mock-tab-pane active">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Alias</label>
+                                        <input type="text" class="mock-input" value="google" disabled />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Client ID</label>
+                                        <input type="text" class="mock-input" value="987654321-googleusercontent.com" />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Client Secret</label>
+                                        <input type="password" class="mock-input" value="••••••••••••••••••••" />
+                                    </div>
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">Trust Email</span>
+                                            <div class="mock-desc-text">Tin cậy email do nhà cung cấp danh tính bên ngoài gửi về</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab General Settings (Thông số cơ bản)</h4>
+                                    <p>Tích hợp tài khoản Google:</p>
+                                    <ul>
+                                        <li><strong>Client ID / Client Secret:</strong> Khai báo thông tin nhận được sau khi tạo OAuth2 App trên Google Cloud Platform Developer Console.</li>
+                                        <li><strong>Trust Email:</strong> Nếu bật, Keycloak sẽ tự động bỏ qua bước bắt buộc xác thực email đối với các tài khoản đăng nhập từ Google vì Google đã xác thực email này từ trước.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Mappers -->
+                        <div id="id-tab-mappers" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-table-wrapper">
+                                        <table class="mock-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Name</th>
+                                                    <th>Mapper Type</th>
+                                                    <th>Value</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>google-hd-mapper</td>
+                                                    <td>Hardcoded Role</td>
+                                                    <td>Assign Role: company-member</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <button class="mock-btn">Create Mapper</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Mappers (Ánh xạ danh tính)</h4>
+                                    <p>Ánh xạ dữ liệu trả về từ IdP:</p>
+                                    <ul>
+                                        <li>Giúp tự động gán vai trò của Keycloak khi phát hiện người dùng đăng nhập bằng tài khoản Google thuộc sở hữu của doanh nghiệp (ví dụ: kiểm tra domain email `@company.vn` để tự động gán vai trò `staff`).</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 44.4 User federation -->
+    <div id="user-federation-sub" style="margin-top: 40px;">
+        <h3>44.4. User Federation</h3>
+        <p>
+            <strong>User Federation</strong> kết nối cơ sở dữ liệu người dùng bên ngoài với Keycloak. Thay vì phải di chuyển (migrate) hàng ngàn tài khoản nhân sự từ Active Directory (AD) hay LDAP có sẵn của công ty vào cơ sở dữ liệu riêng của Keycloak, bạn có thể cấu hình User Federation để Keycloak truy vấn, xác thực trực tiếp và đồng bộ hóa tài khoản từ các nguồn ngoài này theo thời gian thực.
+        </p>
+
+        <!-- UI Mockup for User Federation -->
+        <div class="kc-ui-mockup">
+            <div class="kc-mock-header">
+                <div class="kc-mock-logo">Keycloak Admin Console</div>
+                <div>Realm: <span style="font-weight: 600; color: #3b82f6;">myrealm</span></div>
+            </div>
+            <div class="kc-mock-wrapper">
+                <div class="kc-mock-sidebar">
+                    <div class="kc-mock-sidebar-title">Manage</div>
+                    <div class="kc-mock-sidebar-item">Clients</div>
+                    <div class="kc-mock-sidebar-item">Client scopes</div>
+                    <div class="kc-mock-sidebar-item">Realm roles</div>
+                    <div class="kc-mock-sidebar-item">Users</div>
+                    <div class="kc-mock-sidebar-item">Groups</div>
+                    <div class="kc-mock-sidebar-item">Sessions</div>
+                    <div class="kc-mock-sidebar-item">Events</div>
+                    <div class="kc-mock-sidebar-title">Configure</div>
+                    <div class="kc-mock-sidebar-item">Realm settings</div>
+                    <div class="kc-mock-sidebar-item">Authentication</div>
+                    <div class="kc-mock-sidebar-item">Identity providers</div>
+                    <div class="kc-mock-sidebar-item active">User federation</div>
+                </div>
+                <div class="kc-mock-content">
+                    <div class="kc-mock-title-area">
+                        <h3>User Federation &raquo; LDAP Provider</h3>
+                    </div>
+                    <div class="kc-mock-tabs-nav">
+                        <button class="mock-tab-btn active" onclick="switchMockTab(this, 'uf-tab-connection')">Connection Settings</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'uf-tab-schema')">User Schema</button>
+                        <button class="mock-tab-btn" onclick="switchMockTab(this, 'uf-tab-sync')">Sync Settings</button>
+                    </div>
+                    <div class="mock-tab-content">
+                        <!-- Tab Connection Settings -->
+                        <div id="uf-tab-connection" class="mock-tab-pane active">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">LDAP URL</label>
+                                        <input type="text" class="mock-input" value="ldap://10.120.10.10:389" />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Bind DN</label>
+                                        <input type="text" class="mock-input" value="cn=admin,dc=company,dc=vn" />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Bind Credential</label>
+                                        <input type="password" class="mock-input" value="••••••••••••" />
+                                    </div>
+                                    <button class="mock-btn secondary">Test connection</button>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Connection Settings (Kết nối LDAP/AD)</h4>
+                                    <p>Thiết lập đường truyền vật lý kết nối với máy chủ LDAP:</p>
+                                    <ul>
+                                        <li><strong>LDAP URL:</strong> Địa chỉ máy chủ (khuyên dùng `ldaps://` kèm cổng 636 trên Production để mã hóa dữ liệu truyền tải).</li>
+                                        <li><strong>Bind DN / Bind Credential:</strong> Tài khoản quản trị của LDAP có đủ quyền đọc để thực hiện truy vấn danh sách người dùng.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab User Schema -->
+                        <div id="uf-tab-schema" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Users DN</label>
+                                        <input type="text" class="mock-input" value="ou=users,dc=company,dc=vn" />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Username LDAP Attribute</label>
+                                        <input type="text" class="mock-input" value="sAMAccountName" />
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Edit Mode</label>
+                                        <input type="text" class="mock-input" value="READ_ONLY" />
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab User Schema (Cấu trúc dữ liệu)</h4>
+                                    <p>Ánh xạ cấu trúc dữ liệu LDAP:</p>
+                                    <ul>
+                                        <li><strong>Users DN:</strong> Node gốc chứa người dùng trong danh mục LDAP.</li>
+                                        <li><strong>Username Attribute:</strong> Thuộc tính đóng vai trò là tên đăng nhập (ví dụ: `sAMAccountName` đối với Active Directory, `uid` đối với OpenLDAP).</li>
+                                        <li><strong>Edit Mode:</strong> `READ_ONLY` sẽ không cho phép sửa đổi thông tin user từ Keycloak; `WRITABLE` sẽ tự động ghi đồng bộ ngược lại các thay đổi thông tin (như đổi mật khẩu) lên máy chủ LDAP gốc.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Tab Sync Settings -->
+                        <div id="uf-tab-sync" class="mock-tab-pane">
+                            <div class="mock-split-container">
+                                <div class="mock-split-visual">
+                                    <div class="mock-form-group row">
+                                        <div>
+                                            <span class="mock-label">Periodic Full Sync</span>
+                                            <div class="mock-desc-text">Đồng bộ toàn bộ tài khoản định kỳ</div>
+                                        </div>
+                                        <label class="mock-toggle-switch">
+                                            <input type="checkbox" checked />
+                                            <span class="mock-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="mock-form-group">
+                                        <label class="mock-label">Full Sync Period (seconds)</label>
+                                        <input type="number" class="mock-input" value="86400" />
+                                    </div>
+                                </div>
+                                <div class="mock-split-desc">
+                                    <h4>Tab Sync Settings (Chu kỳ đồng bộ)</h4>
+                                    <p>Cấu hình đồng bộ chạy ngầm (Background Sync):</p>
+                                    <ul>
+                                        <li><strong>Periodic Full Sync:</strong> Định kỳ quét và nạp toàn bộ danh sách tài khoản mới từ LDAP về database đệm của Keycloak (ví dụ: mỗi 86400 giây = 24 giờ).</li>
+                                        <li><strong>Changed Users Sync:</strong> Chỉ đồng bộ những tài khoản có phát sinh thay đổi (được tạo mới, khóa, hoặc sửa thông tin) để tiết kiệm băng thông và tối ưu hóa hiệu năng hệ thống.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ===================================================== -->
+<!-- END OF WIKI -->
+<!-- ===================================================== -->
+
+</div>
+
+</body>
+
+</html>

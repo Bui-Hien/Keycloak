@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: keycloak
+  datasource:
+    url: jdbc:mysql://localhost:3306/db_keycloak?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+#    show-sql: true
+  security:
+    oauth2:
+      resourceserver:
+        # Cấu hình Spring Boot làm OAuth2 Resource Server để xác thực JWT token
+        jwt:
+          # URL định danh nhà phát hành token (Issuer) của Realm hienbx
+          issuer-uri: https://keycloak.hiendev.online/realms/hienbx
+          # Đường dẫn lấy danh sách các khóa công khai (Public Keys) để giải mã chữ ký JWT gửi lên
+          jwk-set-uri: https://keycloak.hiendev.online/realms/hienbx/protocol/openid-connect/certs
+
+# Cấu hình Custom kết nối Keycloak Admin Client để gọi các API quản trị (CRUD User)
+keycloak:
+  # Địa chỉ máy chủ gốc của Keycloak đang hoạt động
+  server-url: https://keycloak.hiendev.online/
+  # Realm quản lý người dùng chính (CRUD)
+  realm: hienbx
+  # ID của Client được tạo trong Keycloak đại diện cho Backend
+  client-id: hienbx_bio
+  # Mã bí mật (Client Secret) của confidential client hienbx_crm dùng để định danh
+  client-secret: UjPk9VI16o2WvPxaoC1EWKuKhXVPobW8
+
+app:
+  phone:
+    max-limit: 4

@@ -1,0 +1,23 @@
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# Agent/Tool Directories
+.agents/
+.gemini/
+
+# Dependency directories
+node_modules/
+Frontend/node_modules/
+
+# Build outputs
+target/
+Backend/target/
+dist/
+Frontend/dist/
