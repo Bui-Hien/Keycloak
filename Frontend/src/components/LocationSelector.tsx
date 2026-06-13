@@ -155,21 +155,22 @@ export default function LocationSelector({ onSelectFinalUnit }: LocationSelector
       elevation={0} 
       sx={{ 
         p: 3, 
-        backgroundColor: 'rgba(30, 41, 59, 0.5)', 
-        border: '1px solid rgba(255, 255, 255, 0.05)', 
+        backgroundColor: '#ffffff', 
+        border: '1px solid #e2e8f0', 
         borderRadius: '12px',
+        boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05)',
         maxWidth: 500,
         width: '100%'
       }}
     >
-      <Typography variant="subtitle1" sx={{ color: '#fff', fontWeight: 600, mb: 2 }}>
+      <Typography variant="subtitle1" sx={{ color: '#0f172a', fontWeight: 600, mb: 2 }}>
         Chọn Địa chỉ Đa Quốc gia (Dynamic Schema)
       </Typography>
 
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
         {/* 1. Country Selection */}
         <FormControl fullWidth size="small">
-          <InputLabel id="country-select-label" sx={{ color: '#9ca3af' }}>Quốc gia</InputLabel>
+          <InputLabel id="country-select-label" sx={{ color: '#64748b' }}>Quốc gia</InputLabel>
           <Select
             labelId="country-select-label"
             id="country-select"
@@ -178,19 +179,19 @@ export default function LocationSelector({ onSelectFinalUnit }: LocationSelector
             onChange={(e) => handleCountryChange(e.target.value)}
             disabled={loading}
             sx={{
-              color: '#fff',
-              '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255, 255, 255, 0.1)' },
-              '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255, 255, 255, 0.3)' },
+              color: '#0f172a',
+              '& .MuiOutlinedInput-notchedOutline': { borderColor: '#cbd5e1' },
+              '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#94a3b8' },
               '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#3b82f6' },
-              '& .MuiSvgIcon-root': { color: '#9ca3af' }
+              '& .MuiSvgIcon-root': { color: '#64748b' }
             }}
             MenuProps={{
               slotProps: {
                 paper: {
                   sx: {
-                    backgroundColor: '#1e293b',
-                    color: '#fff',
-                    border: '1px solid rgba(255, 255, 255, 0.1)'
+                    backgroundColor: '#ffffff',
+                    color: '#0f172a',
+                    border: '1px solid #e2e8f0'
                   }
                 }
               }
@@ -211,40 +212,37 @@ export default function LocationSelector({ onSelectFinalUnit }: LocationSelector
         )}
 
         {/* 3. Dynamic Administrative Levels Dropdowns */}
-        {selectedCountry && !loading && levelsSchema.map((schema) => {
+        {selectedCountry && levelsSchema.map((schema) => {
           const currentLevel = schema.level;
           const prevLevel = currentLevel - 1;
-          
-          // Dropdown is visible if it is level 1 OR the previous level has been selected
-          const isVisible = currentLevel === 1 || !!selections[prevLevel];
+          const isParentSelected = currentLevel === 1 || !!selections[prevLevel];
           const levelOptions = options[currentLevel] || [];
 
-          if (!isVisible) return null;
-
           return (
-            <FormControl key={currentLevel} fullWidth size="small">
-              <InputLabel id={`label-level-${currentLevel}`} sx={{ color: '#9ca3af' }}>{schema.levelName}</InputLabel>
+            <FormControl key={currentLevel} fullWidth size="small" disabled={loading || !isParentSelected}>
+              <InputLabel id={`label-level-${currentLevel}`} sx={{ color: isParentSelected ? '#64748b' : 'rgba(100, 116, 139, 0.4)' }}>{schema.levelName}</InputLabel>
               <Select
                 labelId={`label-level-${currentLevel}`}
                 id={`select-level-${currentLevel}`}
                 value={selections[currentLevel] || ''}
                 label={schema.levelName}
                 onChange={(e) => handleLevelChange(currentLevel, Number(e.target.value))}
+                disabled={loading || !isParentSelected}
                 sx={{
-                  color: '#fff',
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255, 255, 255, 0.1)' },
-                  '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255, 255, 255, 0.3)' },
+                  color: isParentSelected ? '#0f172a' : 'rgba(15, 23, 42, 0.3)',
+                  '& .MuiOutlinedInput-notchedOutline': { borderColor: isParentSelected ? '#cbd5e1' : '#f1f5f9' },
+                  '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: isParentSelected ? '#94a3b8' : '#f1f5f9' },
                   '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#3b82f6' },
-                  '& .MuiSvgIcon-root': { color: '#9ca3af' }
+                  '& .MuiSvgIcon-root': { color: isParentSelected ? '#64748b' : 'rgba(100, 116, 139, 0.4)' }
                 }}
                 MenuProps={{
                   slotProps: {
                     paper: {
                       sx: {
-                        backgroundColor: '#1e293b',
-                        color: '#fff',
+                        backgroundColor: '#ffffff',
+                        color: '#0f172a',
                         maxHeight: 250,
-                        border: '1px solid rgba(255, 255, 255, 0.1)'
+                        border: '1px solid #e2e8f0'
                       }
                     }
                   }
