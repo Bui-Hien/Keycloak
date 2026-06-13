@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import keycloak from './keycloak';
 import api from './api';
 import DepartmentManager from './components/DepartmentManager';
+import LocationSelector from './components/LocationSelector';
 import './App.css';
 
 interface UserDto {
@@ -16,7 +17,9 @@ interface UserDto {
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'users' | 'departments'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'departments' | 'locations'>('users');
+  const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null);
+  const [selectedAddressText, setSelectedAddressText] = useState<string>('');
   const [users, setUsers] = useState<UserDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
@@ -288,6 +291,22 @@ function App() {
             }}
           >
             Quản lý Phòng ban
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'locations' ? 'active' : ''}`}
+            onClick={() => setActiveTab('locations')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: 'none',
+              background: activeTab === 'locations' ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+              color: activeTab === 'locations' ? '#3b82f6' : '#9ca3af',
+              cursor: 'pointer',
+              fontWeight: 600,
+              transition: 'all 0.2s'
+            }}
+          >
+            Đơn vị hành chính
           </button>
         </div>
         <div className="user-profile">
@@ -576,8 +595,47 @@ function App() {
           )}
         </section>
           </>
-        ) : (
+        ) : activeTab === 'departments' ? (
           <DepartmentManager />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', width: '100%', padding: '20px 0' }}>
+            <button 
+              onClick={async () => {
+                try {
+                  await api.post('/api/administrative-units/fake-data');
+                  alert('Sinh dữ liệu mẫu thành công!');
+                } catch (err) {
+                  alert('Thất bại khi sinh dữ liệu mẫu');
+                }
+              }}
+              style={{
+                padding: '10px 20px',
+                borderRadius: '8px',
+                border: 'none',
+                backgroundColor: '#fbbf24',
+                color: '#1e293b',
+                cursor: 'pointer',
+                fontWeight: 600,
+                transition: 'background-color 0.2s'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#d97706'}
+              onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#fbbf24'}
+            >
+              Sinh dữ liệu mẫu Đơn vị hành chính (VN/US)
+            </button>
+            <LocationSelector 
+              onSelectFinalUnit={(id, fullText) => {
+                setSelectedUnitId(id);
+                setSelectedAddressText(fullText);
+              }} 
+            />
+            {selectedUnitId && (
+              <div style={{ padding: '15px', backgroundColor: 'rgba(52, 211, 153, 0.15)', border: '1px solid rgba(52, 211, 153, 0.3)', borderRadius: '8px', color: '#34d399', maxWidth: '500px', width: '100%', textAlign: 'center' }}>
+                <strong>Đã chọn đơn vị hành chính cuối cùng:</strong> ID = {selectedUnitId} <br/>
+                <strong style={{ display: 'block', marginTop: '5px' }}>Địa chỉ đầy đủ:</strong> {selectedAddressText}
+              </div>
+            )}
+          </div>
         )}
       </main>
 
