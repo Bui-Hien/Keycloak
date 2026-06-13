@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import keycloak from './keycloak';
 import api from './api';
+import DepartmentManager from './components/DepartmentManager';
 import './App.css';
 
 interface UserDto {
@@ -15,6 +16,7 @@ interface UserDto {
 }
 
 function App() {
+  const [activeTab, setActiveTab] = useState<'users' | 'departments'>('users');
   const [users, setUsers] = useState<UserDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
@@ -254,6 +256,40 @@ function App() {
           <div className="pulse-dot"></div>
           <h1>Keycloak Admin Portal</h1>
         </div>
+        <div className="header-tabs" style={{ display: 'flex', gap: '10px', marginLeft: '20px' }}>
+          <button 
+            className={`tab-btn ${activeTab === 'users' ? 'active' : ''}`}
+            onClick={() => setActiveTab('users')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: 'none',
+              background: activeTab === 'users' ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+              color: activeTab === 'users' ? '#3b82f6' : '#9ca3af',
+              cursor: 'pointer',
+              fontWeight: 600,
+              transition: 'all 0.2s'
+            }}
+          >
+            Quản lý Người dùng
+          </button>
+          <button 
+            className={`tab-btn ${activeTab === 'departments' ? 'active' : ''}`}
+            onClick={() => setActiveTab('departments')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '6px',
+              border: 'none',
+              background: activeTab === 'departments' ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+              color: activeTab === 'departments' ? '#3b82f6' : '#9ca3af',
+              cursor: 'pointer',
+              fontWeight: 600,
+              transition: 'all 0.2s'
+            }}
+          >
+            Quản lý Phòng ban
+          </button>
+        </div>
         <div className="user-profile">
           <div className="avatar">
             {currentUsername.charAt(0).toUpperCase()}
@@ -304,8 +340,10 @@ function App() {
           </div>
         )}
 
-        {/* Dashboard Actions Panel */}
-        <section className="controls-panel">
+        {activeTab === 'users' ? (
+          <>
+            {/* Dashboard Actions Panel */}
+            <section className="controls-panel">
           <div className="search-bar">
             <svg className="search-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
@@ -537,6 +575,10 @@ function App() {
             </>
           )}
         </section>
+          </>
+        ) : (
+          <DepartmentManager />
+        )}
       </main>
 
       {/* Add User Modal */}

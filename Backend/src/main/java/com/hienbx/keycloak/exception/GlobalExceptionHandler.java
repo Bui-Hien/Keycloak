@@ -188,6 +188,23 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneralException(Exception ex, HttpServletRequest request) {
+        // Handle Tomcat/Spring invalid query parameter format gracefully as 400 Bad Request
+        if (ex.getClass().getName().contains("InvalidParameterException") || 
+            (ex.getCause() != null && ex.getCause().getClass().getName().contains("InvalidParameterException")) ||
+            (ex.getMessage() != null && ex.getMessage().contains("Invalid chunk"))) {
+            
+            log.warn("Invalid parameter structure from client request: {}", ex.getMessage());
+            
+            ErrorResponse errorResponse = ErrorResponse.builder()
+                    .timestamp(LocalDateTime.now())
+                    .status(HttpStatus.BAD_REQUEST.value())
+                    .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                    .message("Tham số yêu cầu (URL query parameters) không hợp lệ hoặc sai định dạng.")
+                    .path(request.getRequestURI())
+                    .build();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+        }
+
         log.error("Unhandled Exception: ", ex);
 
         ErrorResponse errorResponse = ErrorResponse.builder()
