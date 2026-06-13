@@ -37,8 +37,6 @@ public class DepartmentDto {
         this.code = entity.getCode();
         this.description = entity.getDescription();
         this.mpath = entity.getMpath();
-        if (entity.getParent() != null) {
-            this.parentId = entity.getParent().getId();
-        }
+        this.parentId = entity.getParentId();
     }
 }

@@ -100,46 +100,60 @@ public class DepartmentService {
     }
 
     private Page<DepartmentDto> pagingDepartmentByKeyword(Pageable pageable, String keyword) {
-        Page<DepartmentDto> data = departmentRepository.findByPage(pageable, keyword);
-
-        return buildTreeView(data);
-    }
-
-    private Page<DepartmentDto> buildTreeView(Page<DepartmentDto> data) {
-        if (data == null || data.getContent().isEmpty()) {
-            return null;
+        // Query 1 & 2: Chỉ lấy ID của các nút gốc ở trang hiện tại
+        Page<Long> rootIdPage = departmentRepository.findRootIdsByKeyword(pageable, keyword);
+        if (rootIdPage == null || rootIdPage.getContent().isEmpty()) {
+            return new PageImpl<>(new ArrayList<>(), pageable, 0);
         }
-        List<DepartmentDto> listDepartment = data.getContent();
 
-        Set<Long> ids = new HashSet<>();
+        // Query 3: Chỉ tìm tất cả các mpaths khớp từ khóa trong hệ thống (nhẹ nhất có
+        // thể)
+        List<String> allMpaths = departmentRepository.findAllMpathsByKeyword(keyword);
+        if (allMpaths == null || allMpaths.isEmpty()) {
+            return new PageImpl<>(new ArrayList<>(), pageable, 0);
+        }
 
-        for (DepartmentDto dto : listDepartment) {
-            if (dto == null || !StringUtils.hasText(dto.getMpath())) {
-                continue;
-            }
-            String[] pathParts = dto.getMpath().split("/");
+        // Lấy danh sách ID gốc của trang hiện tại dưới dạng Set
+        Set<Long> currentPageRootIds = new HashSet<>(rootIdPage.getContent());
+
+        // Lọc các mpath thuộc các gốc của trang hiện tại
+        List<String> filteredMpaths = allMpaths.stream()
+                .filter(mpath -> {
+                    if (mpath == null)
+                        return false;
+                    return currentPageRootIds.stream().anyMatch(rootId -> mpath.startsWith("/" + rootId + "/"));
+                })
+                .toList();
+
+        // Thu thập tất cả các ID tổ tiên cần thiết để dựng cây
+        Set<Long> idsToFetch = new HashSet<>();
+        for (String mpath : filteredMpaths) {
+            String[] pathParts = mpath.split("/");
             for (String part : pathParts) {
                 if (StringUtils.hasText(part)) {
-                    ids.add(Long.valueOf(part));
+                    idsToFetch.add(Long.valueOf(part));
                 }
             }
         }
 
-        if (ids.isEmpty()) {
-            return null;
+        if (idsToFetch.isEmpty()) {
+            return new PageImpl<>(new ArrayList<>(), pageable, 0);
         }
 
-        List<DepartmentDto> parentList = departmentRepository.findByIds(ids.stream().toList());
-        if (parentList == null || parentList.isEmpty()) {
-            return null;
+        // Query 4: Tải toàn bộ data chi tiết (Name, Code, ParentId...) của các node cần
+        // thiết dựng cây cho trang hiện tại
+        List<DepartmentDto> nodesToBuild = departmentRepository.findByIds(idsToFetch.stream().toList());
+        if (nodesToBuild == null || nodesToBuild.isEmpty()) {
+            return new PageImpl<>(new ArrayList<>(), pageable, 0);
         }
 
-        Map<Long, DepartmentDto> map = parentList.stream()
+        // Dựng cây từ danh sách node trên
+        Map<Long, DepartmentDto> map = nodesToBuild.stream()
                 .collect(Collectors.toMap(DepartmentDto::getId, dto -> dto, (existing, replacement) -> existing));
 
         List<DepartmentDto> roots = new ArrayList<>();
 
-        for (DepartmentDto dto : parentList) {
+        for (DepartmentDto dto : nodesToBuild) {
             if (dto.getChildren() == null) {
                 dto.setChildren(new ArrayList<>());
             }
@@ -153,17 +167,20 @@ public class DepartmentService {
                     parentDto.getChildren().add(dto);
                 }
             } else {
-                roots.add(dto);
+                if (currentPageRootIds.contains(dto.getId())) {
+                    roots.add(dto);
+                }
             }
         }
 
-        return new PageImpl<>(roots, data.getPageable(), data.getTotalElements());
+        // Trả về trang dữ liệu với tổng số phần tử khớp với số nút gốc trên DB
+        return new PageImpl<>(roots, pageable, rootIdPage.getTotalElements());
     }
 
     @Transactional
     public void generateFakeDepartments() {
         List<Long> createdIds = new ArrayList<>();
-        
+
         // 1. Create exactly 100 root departments (parentId = null)
         for (int i = 1; i <= 100; i++) {
             DepartmentDto dto = DepartmentDto.builder()
@@ -197,8 +214,9 @@ public class DepartmentService {
         }
 
         // 3. Create the remaining departments (up to 1000 nodes total)
-        // All these remaining departments must have a valid parent, keeping the root node count strictly at 100.
-        int totalNodes = 1000;
+        // All these remaining departments must have a valid parent, keeping the root
+        // node count strictly at 100.
+        int totalNodes = 10000;
         int currentCount = createdIds.size();
         for (int i = currentCount + 1; i <= totalNodes; i++) {
             Long parentId = createdIds.get((int) (Math.random() * createdIds.size()));
@@ -217,4 +235,3 @@ public class DepartmentService {
         }
     }
 }
-

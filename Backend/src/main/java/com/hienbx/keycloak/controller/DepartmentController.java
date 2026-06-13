@@ -47,8 +47,7 @@ public class DepartmentController {
             if (sortParts.length == 2) {
                 sortObj = Sort.by(
                         sortParts[1].equalsIgnoreCase("desc") ? Sort.Direction.DESC : Sort.Direction.ASC,
-                        sortParts[0]
-                );
+                        sortParts[0]);
             }
         }
         Pageable pageable = PageRequest.of(page, size, sortObj);
@@ -59,6 +58,6 @@ public class DepartmentController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Map<String, String>> generateFakeDepartments() {
         departmentService.generateFakeDepartments();
-        return ResponseEntity.ok(Map.of("message", "Generated 100 hierarchical fake departments successfully."));
+        return ResponseEntity.ok(Map.of("message", "Generated 10000 hierarchical fake departments successfully."));
     }
 }

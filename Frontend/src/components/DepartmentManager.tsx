@@ -273,7 +273,7 @@ export default function DepartmentManager() {
     setSuccessMsg(null);
     try {
       await api.post('/api/departments/fake-data');
-      setSuccessMsg('Sinh 100 phòng ban mẫu thành công!');
+      setSuccessMsg('Sinh 10.000 phòng ban mẫu thành công!');
       fetchDepartments(0, '');
     } catch (err: any) {
       console.error(err);
@@ -370,7 +370,7 @@ export default function DepartmentManager() {
             startIcon={fakeLoading ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
             sx={{ textTransform: 'none', backgroundColor: '#fbbf24', '&:hover': { backgroundColor: '#d97706' } }}
           >
-            {fakeLoading ? 'Đang tạo dữ liệu...' : 'Tạo 100 PB Mẫu (5 Cấp)'}
+            {fakeLoading ? 'Đang tạo dữ liệu...' : 'Tạo 10.000 PB Mẫu (5 Cấp)'}
           </Button>
           <Button
             variant="contained"

@@ -11,7 +11,8 @@ import java.util.Set;
 
 @Entity
 @Table(name = "tbl_department", indexes = {
-        @Index(name = "idx_department_parent_id", columnList = "parent_id")
+        @Index(name = "idx_department_parent_id", columnList = "parent_id"),
+        @Index(name = "idx_department_mpath", columnList = "mpath")
 })
 @Data
 @Builder
@@ -34,11 +35,15 @@ public class Department {
     @Column(name = "mpath", nullable = false)
     private String mpath;
 
+    @Column(name = "parent_id", insertable = false, updatable = false)
+    private Long parentId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
     private Department parent;
 
     @OneToMany(mappedBy = "parent", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("id ASC")
+    @Builder.Default
     private Set<Department> children = new HashSet<>();
 }
