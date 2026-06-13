@@ -210,7 +210,7 @@ export default function DepartmentManager() {
             params: {
               parentId: node.id,
               page: 0,
-              size: 10
+              size: 10000
             }
           });
           const childrenData = response.data.content || [];

@@ -84,6 +84,7 @@ public class DepartmentService {
         return true;
     }
 
+    @Transactional(readOnly = true)
     public Page<DepartmentDto> pagingDepartment(Pageable pageable, Long parentId, String keyword) {
         if (pageable == null) {
             return null;
