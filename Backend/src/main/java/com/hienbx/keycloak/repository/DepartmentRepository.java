@@ -29,18 +29,16 @@ public interface DepartmentRepository extends JpaRepository<Department, Long>, J
         Page<DepartmentDto> findByParentId(@Param("parentId") Long parentId, Pageable pageable);
 
         @Query("SELECT DISTINCT r.id FROM Department r WHERE r.parentId IS NULL AND EXISTS (" +
-                        "SELECT 1 FROM Department d WHERE d.rootId = r.id " +
-                        "AND (d.name LIKE CONCAT('%', :keyword, '%') " +
-                                "OR d.code LIKE CONCAT('%', :keyword, '%') " +
-                                "OR d.description LIKE CONCAT('%', :keyword, '%'))" +
-                        ")")
+                        "SELECT 1 FROM Department d WHERE d.rootId = r.id AND (d.name LIKE CONCAT('%', :keyword, '%') "
+                        +
+                        "OR d.code LIKE CONCAT('%', :keyword, '%') " +
+                        "OR d.description LIKE CONCAT('%', :keyword, '%')))")
         Page<Long> findRootIdsByKeyword(Pageable pageable, @Param("keyword") String keyword);
 
         @Modifying
-        @Query("UPDATE Department d " +
-                "SET d.mpath = CONCAT(:newMpath, SUBSTRING(d.mpath, LENGTH(:oldMpath) + 1, LENGTH(d.mpath)))" +
-                ", d.rootId = :newRootId WHERE d.mpath LIKE CONCAT(:oldMpath, '%')")
-        void updateMpathAndRootIdPrefix(@Param("oldMpath") String oldMpath, @Param("newMpath") String newMpath, @Param("newRootId") Long newRootId);
+        @Query("UPDATE Department d SET d.mpath = CONCAT(:newMpath, SUBSTRING(d.mpath, LENGTH(:oldMpath) + 1, LENGTH(d.mpath))), d.rootId = :newRootId WHERE d.mpath LIKE CONCAT(:oldMpath, '%')")
+        void updateMpathAndRootIdPrefix(@Param("oldMpath") String oldMpath, @Param("newMpath") String newMpath,
+                        @Param("newRootId") Long newRootId);
 
         @Modifying
         @Query("DELETE FROM Department d WHERE d.mpath LIKE CONCAT(:mpath, '%')")

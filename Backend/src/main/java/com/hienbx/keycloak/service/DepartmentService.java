@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import jakarta.persistence.EntityManager;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -20,6 +21,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class DepartmentService {
     private final DepartmentRepository departmentRepository;
+    private final EntityManager entityManager;
 
     @Transactional
     public DepartmentDto createOrUpdateDepartment(DepartmentDto dto) {
@@ -173,57 +175,90 @@ public class DepartmentService {
     @Transactional
     public void generateFakeDepartments() {
         List<Long> createdIds = new ArrayList<>();
+        Map<Long, String> idToMpathMap = new HashMap<>();
+        Map<Long, Long> idToRootIdMap = new HashMap<>();
 
         // 1. Create exactly 100 root departments (parentId = null)
         for (int i = 1; i <= 100; i++) {
-            DepartmentDto dto = DepartmentDto.builder()
-                    .name("Phòng ban gốc " + i)
-                    .code("PB_ROOT_" + String.format("%03d", i))
-                    .description("Mô tả phòng ban gốc " + i)
-                    .parentId(null)
-                    .build();
-            DepartmentDto saved = createOrUpdateDepartment(dto);
-            if (saved != null && saved.getId() != null) {
-                createdIds.add(saved.getId());
+            Department entity = new Department();
+            entity.setName("Phòng ban gốc " + i);
+            entity.setCode("PB_ROOT_" + String.format("%03d", i));
+            entity.setDescription("Mô tả phòng ban gốc " + i);
+            entity.setMpath("");
+
+            entity = departmentRepository.save(entity);
+            entity.setMpath("/" + entity.getId() + "/");
+            entity.setRootId(entity.getId());
+
+            createdIds.add(entity.getId());
+            idToMpathMap.put(entity.getId(), entity.getMpath());
+            idToRootIdMap.put(entity.getId(), entity.getRootId());
+
+            if (i % 50 == 0) {
+                entityManager.flush();
+                entityManager.clear();
             }
         }
 
         // 2. Create a deep chain of at least 5 levels from the first root node
         if (!createdIds.isEmpty()) {
             Long currentParentId = createdIds.get(0);
-            for (int level = 2; level <= 6; level++) { // Creates nested children from Level 2 down to Level 6
-                DepartmentDto dto = DepartmentDto.builder()
-                        .name("Phòng ban con cấp " + level)
-                        .code("PB_CHAIN_" + level)
-                        .description("Mô tả phòng ban cấp " + level)
-                        .parentId(currentParentId)
-                        .build();
-                DepartmentDto saved = createOrUpdateDepartment(dto);
-                if (saved != null && saved.getId() != null) {
-                    createdIds.add(saved.getId());
-                    currentParentId = saved.getId(); // Gán làm cha cho cấp tiếp theo
-                }
+            for (int level = 2; level <= 6; level++) {
+                Department entity = new Department();
+                entity.setName("Phòng ban con cấp " + level);
+                entity.setCode("PB_CHAIN_" + level);
+                entity.setDescription("Mô tả phòng ban cấp " + level);
+                entity.setMpath("");
+
+                Department parent = entityManager.getReference(Department.class, currentParentId);
+                entity.setParent(parent);
+
+                entity = departmentRepository.save(entity);
+
+                String parentMpath = idToMpathMap.get(currentParentId);
+                Long rootId = idToRootIdMap.get(currentParentId);
+
+                entity.setMpath(parentMpath + entity.getId() + "/");
+                entity.setRootId(rootId);
+
+                createdIds.add(entity.getId());
+                idToMpathMap.put(entity.getId(), entity.getMpath());
+                idToRootIdMap.put(entity.getId(), entity.getRootId());
+
+                currentParentId = entity.getId();
             }
         }
 
-        // 3. Create the remaining departments (up to 1000 nodes total)
-        // All these remaining departments must have a valid parent, keeping the root
-        // node count strictly at 100.
+        // 3. Create the remaining departments (up to 10000 nodes total)
         int totalNodes = 10000;
         int currentCount = createdIds.size();
         for (int i = currentCount + 1; i <= totalNodes; i++) {
             Long parentId = createdIds.get((int) (Math.random() * createdIds.size()));
 
-            DepartmentDto dto = DepartmentDto.builder()
-                    .name("Phòng ban " + i)
-                    .code("PB_" + String.format("%04d", i))
-                    .description("Mô tả phòng ban " + i)
-                    .parentId(parentId)
-                    .build();
+            Department entity = new Department();
+            entity.setName("Phòng ban " + i);
+            entity.setCode("PB_" + String.format("%04d", i));
+            entity.setDescription("Mô tả phòng ban " + i);
+            entity.setMpath("");
 
-            DepartmentDto saved = createOrUpdateDepartment(dto);
-            if (saved != null && saved.getId() != null) {
-                createdIds.add(saved.getId());
+            Department parent = entityManager.getReference(Department.class, parentId);
+            entity.setParent(parent);
+
+            entity = departmentRepository.save(entity);
+
+            String parentMpath = idToMpathMap.get(parentId);
+            Long rootId = idToRootIdMap.get(parentId);
+
+            entity.setMpath(parentMpath + entity.getId() + "/");
+            entity.setRootId(rootId);
+
+            createdIds.add(entity.getId());
+            idToMpathMap.put(entity.getId(), entity.getMpath());
+            idToRootIdMap.put(entity.getId(), entity.getRootId());
+
+            if (i % 100 == 0) {
+                entityManager.flush();
+                entityManager.clear();
             }
         }
     }
