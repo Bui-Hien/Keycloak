@@ -6,13 +6,11 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.HashSet;
-import java.util.Set;
-
 @Entity
 @Table(name = "tbl_department", indexes = {
         @Index(name = "idx_department_parent_id", columnList = "parent_id"),
-        @Index(name = "idx_department_mpath", columnList = "mpath")
+        @Index(name = "idx_department_mpath", columnList = "mpath"),
+        @Index(name = "idx_department_root_id", columnList = "root_id")
 })
 @Data
 @Builder
@@ -35,15 +33,13 @@ public class Department {
     @Column(name = "mpath", nullable = false)
     private String mpath;
 
+    @Column(name = "root_id")
+    private Long rootId;
+
     @Column(name = "parent_id", insertable = false, updatable = false)
     private Long parentId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_id")
     private Department parent;
-
-    @OneToMany(mappedBy = "parent", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("id ASC")
-    @Builder.Default
-    private Set<Department> children = new HashSet<>();
 }

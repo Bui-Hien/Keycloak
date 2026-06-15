@@ -1,12 +1,10 @@
 package com.hienbx.keycloak.service;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
-
+import com.hienbx.keycloak.dto.DepartmentDto;
+import com.hienbx.keycloak.entity.Department;
+import com.hienbx.keycloak.repository.DepartmentRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -14,12 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-import com.hienbx.keycloak.dto.DepartmentDto;
-import com.hienbx.keycloak.entity.Department;
-import com.hienbx.keycloak.repository.DepartmentRepository;
-
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -34,7 +28,8 @@ public class DepartmentService {
         }
         Department entity = null;
         if (dto.getId() != null) {
-            entity = departmentRepository.findById(dto.getId()).orElse(null);
+            entity = departmentRepository.findById(dto.getId())
+                    .orElseThrow(() -> new IllegalArgumentException("Department not found with id: " + dto.getId()));
         }
         if (entity == null) {
             entity = new Department();
@@ -46,30 +41,36 @@ public class DepartmentService {
 
         Department parent = null;
         if (dto.getParentId() != null) {
-            parent = departmentRepository.findById(dto.getParentId()).orElse(null);
+            parent = departmentRepository.findById(dto.getParentId())
+                    .orElseThrow(() -> new IllegalArgumentException("Parent department not found with id: " + dto.getParentId()));
         }
         entity.setParent(parent);
 
-        if (entity.getId() != null) {
-            if (parent == null) {
-                entity.setMpath("/" + entity.getId() + "/");
-            } else {
-                entity.setMpath(parent.getMpath() + entity.getId() + "/");
+        if (entity.getId() == null) {
+            entity = departmentRepository.save(entity);
+        }
+
+        String oldMpath = entity.getMpath();
+        String newMpath = (parent == null) ? ("/" + entity.getId() + "/") : (parent.getMpath() + entity.getId() + "/");
+
+        Long oldRootId = entity.getRootId();
+        Long newRootId = (parent == null) ? entity.getId() : parent.getRootId();
+
+        boolean isMpathChanged = !newMpath.equals(oldMpath);
+        boolean isRootIdChanged = !Objects.equals(newRootId, oldRootId);
+
+        if (isMpathChanged || isRootIdChanged) {
+            entity.setMpath(newMpath);
+            entity.setRootId(newRootId);
+            if (dto.getId() != null && StringUtils.hasText(oldMpath)) {
+                departmentRepository.updateMpathAndRootIdPrefix(oldMpath, newMpath, newRootId);
             }
-            entity = departmentRepository.save(entity);
-        } else {
-            entity = departmentRepository.save(entity);
-            if (parent == null) {
-                entity.setMpath("/" + entity.getId() + "/");
-            } else {
-                entity.setMpath(parent.getMpath() + entity.getId() + "/");
-            }
-            entity = departmentRepository.save(entity);
         }
 
         return new DepartmentDto(entity);
     }
 
+    @Transactional
     public boolean deleteDepartmentById(Long id) {
         if (id == null) {
             return false;
@@ -79,7 +80,7 @@ public class DepartmentService {
         if (entity == null) {
             return false;
         }
-        departmentRepository.delete(entity);
+        departmentRepository.deleteByMpathStartingWith(entity.getMpath());
 
         return true;
     }
@@ -90,14 +91,14 @@ public class DepartmentService {
             return null;
         }
         if (!StringUtils.hasText(keyword)) {
-            return this.pagingDepartment(pageable, parentId);
+            if (parentId == null) {
+                return departmentRepository.findByParentIdIsNull(pageable);
+            } else {
+                return departmentRepository.findByParentId(parentId, pageable);
+            }
         } else {
             return this.pagingDepartmentByKeyword(pageable, keyword);
         }
-    }
-
-    private Page<DepartmentDto> pagingDepartment(Pageable pageable, Long parentId) {
-        return departmentRepository.findByPage(pageable, parentId);
     }
 
     private Page<DepartmentDto> pagingDepartmentByKeyword(Pageable pageable, String keyword) {
@@ -107,32 +108,25 @@ public class DepartmentService {
             return new PageImpl<>(new ArrayList<>(), pageable, 0);
         }
 
-        // Query 3: Chỉ tìm tất cả các mpaths khớp từ khóa trong hệ thống (nhẹ nhất có
-        // thể)
-        List<String> allMpaths = departmentRepository.findAllMpathsByKeyword(keyword);
-        if (allMpaths == null || allMpaths.isEmpty()) {
+        // Query 3: Tìm các mpath của các department khớp từ khóa thuộc về danh sách rootId của trang hiện tại
+        List<String> matchedMpaths = departmentRepository.findMpathByKeywordAndRootIds(keyword,
+                rootIdPage.getContent());
+        if (matchedMpaths == null || matchedMpaths.isEmpty()) {
             return new PageImpl<>(new ArrayList<>(), pageable, 0);
         }
 
         // Lấy danh sách ID gốc của trang hiện tại dưới dạng Set
         Set<Long> currentPageRootIds = new HashSet<>(rootIdPage.getContent());
 
-        // Lọc các mpath thuộc các gốc của trang hiện tại
-        List<String> filteredMpaths = allMpaths.stream()
-                .filter(mpath -> {
-                    if (mpath == null)
-                        return false;
-                    return currentPageRootIds.stream().anyMatch(rootId -> mpath.startsWith("/" + rootId + "/"));
-                })
-                .toList();
-
         // Thu thập tất cả các ID tổ tiên cần thiết để dựng cây
         Set<Long> idsToFetch = new HashSet<>();
-        for (String mpath : filteredMpaths) {
-            String[] pathParts = mpath.split("/");
-            for (String part : pathParts) {
-                if (StringUtils.hasText(part)) {
-                    idsToFetch.add(Long.valueOf(part));
+        for (String mpath : matchedMpaths) {
+            if (StringUtils.hasText(mpath)) {
+                String[] pathParts = mpath.split("/");
+                for (String part : pathParts) {
+                    if (StringUtils.hasText(part)) {
+                        idsToFetch.add(Long.valueOf(part));
+                    }
                 }
             }
         }
@@ -164,9 +158,7 @@ public class DepartmentService {
                 if (parentDto.getChildren() == null) {
                     parentDto.setChildren(new ArrayList<>());
                 }
-                if (!parentDto.getChildren().contains(dto)) {
-                    parentDto.getChildren().add(dto);
-                }
+                parentDto.getChildren().add(dto);
             } else {
                 if (currentPageRootIds.contains(dto.getId())) {
                     roots.add(dto);

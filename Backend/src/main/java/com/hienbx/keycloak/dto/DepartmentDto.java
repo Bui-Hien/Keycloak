@@ -25,6 +25,8 @@ public class DepartmentDto {
 
     private Long parentId;
 
+    private Long rootId;
+
     @Builder.Default
     private List<DepartmentDto> children = new java.util.ArrayList<>();
 
@@ -38,5 +40,6 @@ public class DepartmentDto {
         this.description = entity.getDescription();
         this.mpath = entity.getMpath();
         this.parentId = entity.getParentId();
+        this.rootId = entity.getRootId();
     }
 }
